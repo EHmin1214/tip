@@ -83,12 +83,16 @@ inputs/
   fibers/                        fibre trajectories and fibre leadfields              72 MB
 ```
 
-> **Team share**: `<fill in the link>`
+> **Team share**:
+> https://drive.google.com/drive/folders/1b-5ad3QkNmGa4wB4TmPg7sQqWaOiH34y?usp=sharing
 > Ask a maintainer if you cannot reach it. To keep the data elsewhere, set `TIP_INPUTS`
 > instead of moving it.
 
-Only `leadfield/leadfield_rebuild/`, `geometry/` and `masks/` are needed to run the GUI. The
-other three are for reproducing past comparisons.
+**You do not need all of it.** `leadfield/leadfield_rebuild/`, `geometry/` and `masks/` —
+about 1.9 GB — are enough to run everything the UI offers. The other three leadfield sets
+(1.6 GB) exist only to reproduce past comparisons: `leadfieldF` and `leadfield_extra` are the
+legacy set, and `leadfield_3cm2` is the four-electrode evidence that electrode size does not
+matter.
 
 **Regenerating it instead.** The leadfields can be rebuilt from the Sim4Life project with
 `tools/s4l/add_electrodes.py` — roughly 2-3 minutes per electrode across 84 electrodes, and it
@@ -147,7 +151,7 @@ No method dominates — the winner depends on target depth and whether a specifi
 | | |
 |---|---|
 | Sim4Life 9.6 | with a **QS_SOLVER licence seat** — a solve fails without one |
-| the head model | `mida1010_rebuild.smash` (276 MB) plus `mida1010_rebuild.smash_Results` (7 MB). **Not in this repository** — it is on the team share next to `inputs/` |
+| the head model | `mida1010_rebuild.smash` (276 MB) plus `mida1010_rebuild.smash_Results` (7 MB). **Not in this repository** — take `tip-s4l-project` from the [team share](https://drive.google.com/drive/folders/1b-5ad3QkNmGa4wB4TmPg7sQqWaOiH34y?usp=sharing) |
 | a Python with `s4l_v1` | the Sim4Life bundled interpreter, or a venv built from it |
 
 Put the project files in a folder next to the repository:
