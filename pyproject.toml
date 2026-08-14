@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tip"
+version = "0.4.0"
+description = "TIP — 경두개 시간간섭자극(tTIS) 몽타주 설계·평가 도구"
+requires-python = ">=3.10"
+# numpy 1.26.4 / scipy 1.14.1 은 Sim4Life 9.6 번들과 함께 검증된 조합이다.
+# 상한을 두지 않으면 numpy 2.x 에서 조용히 달라지는 곳이 있다(정수 오버플로 규약 등).
+dependencies = [
+    "numpy>=1.26,<3",
+    "scipy>=1.11",
+]
+
+[project.optional-dependencies]
+# 단면 이미지·포스터 그림에만 필요하다. GUI 자체는 없어도 돈다.
+plot = ["matplotlib>=3.7"]
+# Sim4Life 결과(.h5)를 직접 읽을 때. Sim4Life 번들 파이썬에는 이미 있다.
+s4l = ["h5py>=3.9"]
+
+[project.scripts]
+tip-gui = "tip.gui.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"tip.gui" = ["*.html"]

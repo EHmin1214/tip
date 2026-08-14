@@ -1,0 +1,832 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TI Planner</title>
+<style>
+  :root{ --bg:#0b0d12; --surface:#12151d; --surface2:#1a1f29; --border:#262c38; --border2:#313947;
+    --text:#e9ebf1; --dim:#8890a1; --faint:#5b6474; --accent:#7b8cff; --accent-2:#9aa6ff; --accent-soft:rgba(123,140,255,.13);
+    --mint:#4fe3bf; --anode:#ff6b6b; --cathode:#5b9bff; --good:#45d39e; --gold:#f5c451;
+    --mono:ui-monospace,"Cascadia Code",Consolas,"D2Coding",monospace; --sans:-apple-system,"Segoe UI",system-ui,"Malgun Gothic","Apple SD Gothic Neo",sans-serif; --r:12px; }
+  *{ box-sizing:border-box; } html,body{ height:100%; margin:0; }
+  body{ background:var(--bg); color:var(--text); font-family:var(--sans); font-size:14px; line-height:1.5; }
+  .app{ display:grid; grid-template-columns:425px 1fr; grid-template-rows:auto 1fr; height:100vh; }
+  header{ grid-column:1/3; display:flex; align-items:center; gap:12px; padding:13px 20px; border-bottom:1px solid var(--border); background:var(--surface); }
+  .glyph{ width:30px;height:30px;border-radius:9px;background:var(--accent-soft);border:1px solid var(--accent);display:grid;place-items:center;color:var(--accent);font-weight:800;font-size:13px; }
+  header b{ font-weight:650; font-size:16px; } .sp{ flex:1; } .status{ font-family:var(--mono); font-size:12px; color:var(--dim); }
+  .lang{ background:var(--surface2); border:1px solid var(--border2); color:var(--dim); border-radius:8px; padding:6px 12px; cursor:pointer; font-size:12.5px; font-weight:600; }
+  .lang:hover{ color:var(--accent); border-color:var(--accent); }
+  .controls{ border-right:1px solid var(--border); overflow-y:auto; padding:18px; background:var(--surface); }
+  .stage{ overflow:hidden; display:grid; grid-template-rows:minmax(0,1.4fr) minmax(0,1fr); }
+  .viewer{ position:relative; background:radial-gradient(120% 120% at 50% 0%, #10131a 0%, #06070a 100%); border-bottom:1px solid var(--border); overflow:hidden; }
+  .analysis{ overflow-y:auto; padding:16px 20px; display:flex; flex-direction:column; gap:14px; }
+  .grp{ margin-bottom:20px; } .grp.tight{ margin-bottom:14px; }
+  .lab{ font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin-bottom:9px; }
+  select,input{ width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:9px; padding:9px 11px; font-family:var(--sans); font-size:13.5px; outline:none; }
+  select:focus,input:focus{ border-color:var(--accent); }
+  .seg{ display:flex; gap:7px; background:var(--surface2); padding:4px; border-radius:11px; border:1px solid var(--border); }
+  .seg button{ flex:1; background:transparent; color:var(--dim); border:none; border-radius:8px; padding:8px; font-family:var(--sans); font-size:13px; font-weight:550; cursor:pointer; }
+  .seg button.on{ background:var(--accent); color:#0b0d12; }
+  .row2{ display:grid; grid-template-columns:1fr 1fr; gap:9px; } .row3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:7px; }
+  .hint{ font-size:11.5px; color:var(--faint); margin-top:7px; }
+  .btn{ background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:9px; padding:8px 12px; font-family:var(--sans); font-size:12.5px; cursor:pointer; }
+  .btn:hover{ border-color:var(--accent); color:var(--accent); }
+  .cta{ flex:1; background:var(--accent); color:#0b0d12; font-weight:700; border:none; border-radius:11px; padding:13px; font-size:15px; cursor:pointer; }
+  .cta:hover{ background:var(--accent-2); } .cta:disabled{ opacity:.5; cursor:not-allowed; }
+  .runrow{ display:flex; gap:9px; } .reset{ background:var(--surface2); border:1px solid var(--border2); color:var(--dim); border-radius:11px; padding:0 14px; cursor:pointer; font-size:13px; } .reset:hover{ color:var(--anode); border-color:var(--anode); }
+  .prog{ margin-top:11px; display:none; } .prog.on{ display:block; }
+  .pbar{ height:7px; background:var(--surface2); border-radius:20px; overflow:hidden; border:1px solid var(--border); }
+  .pfill{ height:100%; width:0%; background:linear-gradient(90deg,var(--accent),var(--mint)); transition:width .2s; }
+  .pmeta{ display:flex; justify-content:space-between; font-family:var(--mono); font-size:11px; color:var(--dim); margin-top:6px; }
+  .selrow{ display:flex; justify-content:space-between; align-items:center; margin-bottom:9px; } .count{ font-family:var(--mono); font-size:12.5px; color:var(--accent); }
+  .presets{ display:flex; flex-wrap:wrap; gap:7px; margin-top:10px; }
+  .pchip{ display:inline-flex; align-items:center; gap:6px; font-size:12px; background:var(--surface2); border:1px solid var(--border2); border-radius:20px; padding:5px 6px 5px 11px; }
+  .pchip button{ background:none; border:none; color:var(--faint); cursor:pointer; font-size:13px; } .pchip button:hover{ color:var(--anode); } .pchip .load{ cursor:pointer; }
+  .wt{ display:flex; align-items:center; gap:10px; margin:8px 0; } .wt label{ font-size:12px; width:82px; color:var(--dim); } .wt output{ font-family:var(--mono); font-size:12px; width:30px; text-align:right; color:var(--accent); }
+  input[type=range]{ -webkit-appearance:none; height:4px; background:var(--surface2); border:none; border-radius:20px; padding:0; }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:var(--accent); cursor:pointer; }
+  .vhud{ position:absolute; left:14px; top:12px; font-family:var(--mono); font-size:11px; color:var(--dim); pointer-events:none; } .vhud b{ color:var(--text); }
+  .cbar{ position:absolute; right:14px; top:14px; bottom:14px; width:12px; border-radius:6px; background:linear-gradient(to top,#000004,#420a68,#932667,#dd513a,#fca50a,#fcffa4); border:1px solid var(--border); opacity:.9; display:none; }
+  .cbar-l{ position:absolute; right:30px; font-family:var(--mono); font-size:9.5px; color:var(--dim); display:none; }
+  .fmode{ position:absolute; left:50%; top:12px; transform:translateX(-50%); display:flex; background:rgba(10,13,18,.74); border:1px solid var(--border); border-radius:8px; overflow:hidden; z-index:5; }
+  .fmode button{ background:transparent; border:0; color:var(--dim); font:600 11px/1 var(--mono); padding:7px 13px; cursor:pointer; }
+  .fmode button.on{ background:#45d39e; color:#07130d; }
+  .fmode button:disabled{ opacity:.38; cursor:not-allowed; }
+  .fpanel{ position:absolute; right:14px; top:14px; bottom:14px; width:296px; background:rgba(9,12,17,.94); border:1px solid var(--border); border-radius:10px; padding:12px 14px; font-family:var(--mono); font-size:11px; color:var(--text); display:none; z-index:6; overflow-y:auto; }
+  .fpanel h4{ margin:0 0 3px; font-size:11px; letter-spacing:.05em; color:#8fe6c4; } .fpanel .cls{ position:absolute; right:10px; top:8px; cursor:pointer; color:var(--dim); font-size:14px; }
+  .fpanel .prow{ display:flex; justify-content:space-between; margin:2px 0; color:var(--dim); } .fpanel .prow b{ color:var(--text); font-weight:600; }
+  .dbtn{ background:#1a2028; border:1px solid var(--border); color:#cbd3e0; font:600 10px var(--mono); padding:1px 7px; border-radius:4px; cursor:pointer; } .dbtn:hover{ background:#252d38; }
+  .wsec{ font-size:9.5px; letter-spacing:.03em; margin:8px 0 2px; padding-top:6px; border-top:1px solid var(--border); } .wsec.field{ color:#ffb48a; } .wsec.af{ color:#8fe6c4; }
+  .eflegend{ position:absolute; left:14px; bottom:14px; font-family:var(--mono); font-size:10px; color:var(--dim); background:rgba(9,12,17,.8); border:1px solid var(--border); border-radius:7px; padding:6px 9px; display:none; z-index:5; line-height:1.6; }
+  .resolp{ position:absolute; left:14px; bottom:14px; font-family:var(--mono); font-size:10.5px; color:var(--text); background:rgba(9,12,17,.92); border:1px solid var(--border); border-radius:8px; padding:8px 11px; z-index:5; display:none; max-width:70%; }
+  .resolp .rp{ background:#1a2028; border:1px solid var(--border); color:#cbd3e0; font:600 9.5px var(--mono); padding:2px 7px; border-radius:4px; cursor:pointer; margin-left:4px; } .resolp .rp:hover{ background:#252d38; } .resolp .rp.on{ background:#45d39e; color:#07130d; border-color:#45d39e; }
+  .resolp input[type=range]{ vertical-align:middle; accent-color:#45d39e; }
+  .elabel{ font-family:var(--mono); font-size:10px; color:#dfe3ee; background:rgba(11,13,18,.66); padding:1px 5px; border-radius:5px; border:1px solid var(--border2); pointer-events:none; white-space:nowrap; transform:translateY(-14px); }
+  .tlabel{ font-family:var(--mono); font-size:10.5px; color:#0b0d12; background:var(--gold); padding:1px 6px; border-radius:5px; pointer-events:none; transform:translateY(-16px); font-weight:600; }
+  .abar{ display:flex; justify-content:flex-end; } .savebtn{ display:none; }
+  .analysis{ font-size:14.5px; }
+  .metrics{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  .mc{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:14px 15px; cursor:help; }
+  .mc .k{ font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); }
+  .mc .v{ font-size:28px; font-weight:700; font-variant-numeric:tabular-nums; margin-top:5px; letter-spacing:-.02em; } .mc .u{ font-size:12.5px; color:var(--faint); margin-top:3px; }
+  .panel{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:16px 18px; }
+  .panel h3{ margin:0 0 5px; font-size:12px; font-family:var(--mono); letter-spacing:.09em; text-transform:uppercase; color:var(--dim); font-weight:600; }
+  .psub{ font-size:13px; color:var(--faint); margin:0 0 13px; line-height:1.45; }
+  .agrid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:15px 22px; }
+  .stat .sk{ font-size:13px; color:var(--dim); } .stat .sv{ font-size:18px; font-weight:600; font-variant-numeric:tabular-nums; margin-top:2px; word-break:break-word; } .stat .sv small{ font-size:12.5px; color:var(--faint); font-weight:400; }
+  .badge{ font-family:var(--mono); font-size:12.5px; padding:2px 9px; border-radius:6px; } .badge.ok{ background:rgba(69,211,158,.12); color:var(--good); } .badge.no{ background:rgba(255,107,107,.12); color:var(--anode); }
+  .proto{ font-family:var(--mono); font-size:14px; line-height:1.9; overflow-x:auto; } .proto>div{ white-space:normal; word-break:break-word; } .proto .chl{ color:var(--dim); }
+  .anode{ color:var(--anode); } .cathode{ color:var(--cathode); }
+  .toplist{ display:flex; flex-direction:column; gap:8px; }
+  .topitem{ display:flex; align-items:center; gap:12px; padding:11px 13px; border:1px solid var(--border); border-radius:10px; cursor:pointer; background:var(--surface2); }
+  .topitem:hover{ border-color:var(--accent); } .topitem.active{ border-color:var(--accent); background:var(--accent-soft); }
+  .topitem .rk{ font-family:var(--mono); font-size:13.5px; color:var(--accent); width:24px; } .topitem .mg{ flex:1; font-family:var(--mono); font-size:13.5px; } .topitem .sc{ font-family:var(--mono); font-size:12.5px; color:var(--dim); white-space:nowrap; }
+  .empty{ color:var(--dim); text-align:center; padding:26px 10px; font-size:13px; } .err{ color:var(--anode); font-size:13px; }
+  canvas.plot{ width:100%; display:block; }
+  @media (max-width:900px){ .app{ grid-template-columns:1fr; grid-template-rows:auto auto 1fr; } .controls{ border-right:none; border-bottom:1px solid var(--border); } .stage{ grid-template-rows:340px auto; } .metrics{ grid-template-columns:repeat(2,1fr); } }
+  /* ── Sim4Life 결과 패널 ── 핵심 숫자(지표·구조별 자극)를 크게, 나머지는 접어둔다 */
+  .s4lh{ font-size:14px; font-weight:700; color:var(--text); margin:20px 0 9px; display:flex; align-items:baseline; gap:9px; }
+  .s4lh small{ font-size:12px; font-weight:400; color:var(--dim); }
+  .s4lcmp{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .s4lc{ background:var(--surface2); border:1px solid var(--border2); border-radius:12px; padding:13px 14px; }
+  .s4lc .n{ font-size:12px; color:var(--dim); letter-spacing:.04em; }
+  .s4lc .big{ font-size:26px; font-weight:800; line-height:1.15; margin:5px 0 2px; font-variant-numeric:tabular-nums; }
+  .s4lc .sub{ font-size:12px; color:var(--faint); font-variant-numeric:tabular-nums; }
+  .s4lc .rr{ font-size:13px; font-weight:700; margin-top:6px; font-variant-numeric:tabular-nums; }
+  .s4lreg{ display:flex; flex-direction:column; gap:7px; }
+  .s4lrow{ display:grid; grid-template-columns:112px 1fr 92px; align-items:center; gap:11px; font-size:13px; }
+  .s4lrow .nm{ font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .s4ltrk{ height:19px; background:var(--surface2); border:1px solid var(--border2); border-radius:6px; overflow:hidden; position:relative; }
+  .s4lfil{ height:100%; border-radius:5px 0 0 5px; }
+  .s4lrow .pc{ text-align:right; font-size:15px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .s4lrow .pc small{ display:block; font-size:11px; font-weight:400; color:var(--faint); }
+  .s4lsaf{ display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:9px; }
+  .s4lsaf .stat{ background:var(--surface2); border:1px solid var(--border2); border-radius:11px; padding:10px 12px; }
+  .s4lsaf .sk{ font-size:11px; color:var(--dim); } .s4lsaf .sv{ font-size:19px; font-weight:700; margin-top:3px; font-variant-numeric:tabular-nums; }
+  .s4lsaf .sv small{ font-size:11px; font-weight:400; color:var(--faint); }
+  details.s4ld > summary{ cursor:pointer; font-size:13px; color:var(--dim); padding:7px 0; list-style:none; }
+  details.s4ld > summary::-webkit-details-marker{ display:none; }
+  details.s4ld > summary::before{ content:'▸ '; } details.s4ld[open] > summary::before{ content:'▾ '; }
+  details.s4ld > summary:hover{ color:var(--accent); }
+  table.s4lt{ border-collapse:collapse; font-size:12.5px; width:100%; font-variant-numeric:tabular-nums; }
+  table.s4lt th,table.s4lt td{ padding:5px 9px; text-align:right; border-bottom:1px solid var(--border2); white-space:nowrap; }
+  table.s4lt th{ color:var(--dim); font-weight:500; }
+  table.s4lt th:first-child,table.s4lt td:first-child{ text-align:left; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header><div class="glyph">TI</div><b>TI Planner</b><span class="sp"></span><span class="status" id="status">…</span><button class="lang" id="langbtn" onclick="toggleLang()">EN</button></header>
+
+  <div class="controls">
+    <div class="grp"><div class="lab" data-i18n="target">표적</div>
+      <select id="target" onchange="onTargetChange()"></select>
+      <div id="coordbox" style="display:none;margin-top:9px">
+        <div class="row3"><input type="number" id="cx" placeholder="X" oninput="updateMarker()"><input type="number" id="cy" placeholder="Y" oninput="updateMarker()"><input type="number" id="cz" placeholder="Z" oninput="updateMarker()"></div>
+        <input type="number" id="cr" placeholder="r (mm)" value="7" style="margin-top:7px" oninput="updateMarker()">
+        <div class="hint" data-i18n="coordHint">표적 좌표(mm)·반경. 근사값이니 필요시 조정하세요.</div>
+      </div>
+    </div>
+    <div class="grp"><div class="lab" data-i18n="mode">자극 모드</div>
+      <div class="seg"><button class="on" data-mode="classic" onclick="setMode('classic')">Classic 2ch</button><button data-mode="gevd" onclick="setMode('gevd')" data-i18n="gevd">GEVD 분산</button><button data-mode="dual" onclick="setMode('dual')" data-i18n="dual">4채널 이중TI</button><button data-mode="timemux" onclick="setMode('timemux')" data-i18n="tmMode" title="시분할: 여러 몽타주를 duty로 순차 스위칭. 전극 예산 내에서 조합을 최대한 많이 만들어 off 부하를 분산. 고강도 영역에서 단일 2쌍 대비 초점 개선.">시분할</button><button data-mode="selective" onclick="setMode('selective')" data-i18n="selMode" title="실험적: 이중기전(필드+AF)·방향최악 선택성 목적함수 — NEURON Q3 대응" style="color:#ffb454">(β) 선택성</button></div>
+      <div id="tmbox" style="display:none;margin-top:10px">
+        <div class="row2"><div><div class="hint" style="margin:0 0 5px" data-i18n="tmSlots">최대 슬롯 수</div><input type="number" id="kslots" value="4" min="2" max="8" step="1"></div>
+          <div><div class="hint" style="margin:0 0 5px" data-i18n="tmElec">전극 예산</div><input type="number" id="maxelec" value="8" min="4" max="24" step="1"></div></div>
+        <div class="wt" style="margin-top:8px"><label style="width:96px" data-i18n="tmFloor">강도 유지율</label><input type="range" id="m1floor" min="0.80" max="0.99" step="0.01" value="0.94" oninput="document.getElementById('m1fo').textContent=(+this.value).toFixed(2)"><output id="m1fo">0.94</output></div>
+        <div class="hint" data-i18n="tmHint">전극은 슬롯 간 재사용됩니다(예산 &lt; 4×슬롯 가능). 강도 유지율이 높을수록 시분할 이점이 커지는 영역입니다.</div></div>
+      <div id="huangbox" style="display:none;margin-top:10px"><div class="lab" data-i18n="pmaxLabel">Pmax — 초점 ↔ 강도</div>
+        <div class="wt"><input type="range" id="pmaxval" min="0.02" max="1.0" step="0.02" value="0.15" oninput="document.getElementById('pmaxo').textContent=(+this.value).toFixed(2)"><output id="pmaxo">0.15</output></div>
+        <div class="hint" data-i18n="pmaxHint">낮을수록 초점(강도↓) · 높을수록 강도(=HD-TES 융합). off 변조파워 상한.</div></div>
+      <div id="kbox" style="display:none;margin-top:10px"><div class="lab" data-i18n="kLabel">사용할 전극 개수 (K)</div>
+        <input type="number" id="kval" value="32" min="4" step="1"><div class="hint" data-i18n="kHint">풀에서 최적 K개 선택. 방향은 표적에서 자동.</div></div>
+    </div>
+    <div class="grp"><div class="selrow"><div class="lab" style="margin:0" data-i18n="elec">사용가능 전극</div><span class="count"><span id="cnt">0</span> <span data-i18n="selected">선택</span></span></div>
+      <div class="hint" style="margin-top:0" data-i18n="elecHint">3D에서 전극 클릭=선택 · 드래그=회전</div>
+      <div class="row2" style="margin-top:9px"><button class="btn" onclick="selectAll(true)" data-i18n="selAll">전체 선택</button><button class="btn" onclick="selectAll(false)" data-i18n="deselAll">모두 해제</button></div></div>
+    <div class="grp"><div class="selrow"><div class="lab" style="margin:0" data-i18n="presets">내 프리셋</div><button class="btn" style="padding:5px 10px" onclick="savePreset()" data-i18n="savePreset">＋ 저장</button></div>
+      <div class="presets" id="presets"></div><div class="hint" id="presethint" data-i18n="presetHint">선택 조합을 저장해 재사용</div></div>
+    <div class="grp" id="wtgrp"><div class="lab" data-i18n="weights">지표 가중치 (최적안 선택)</div>
+      <div class="wt"><label data-i18n="wM1">M1 세기</label><input type="range" id="w1" min="0" max="1" step="0.05" value="0.5" oninput="onWeight()"><output id="w1o">0.5</output></div>
+      <div class="wt"><label data-i18n="wM2">M2 초점</label><input type="range" id="w2" min="0" max="1" step="0.05" value="0.5" oninput="onWeight()"><output id="w2o">0.5</output></div>
+      <div class="wt"><label data-i18n="wM3">M3 누출↓</label><input type="range" id="w3" min="0" max="1" step="0.05" value="0.5" oninput="onWeight()"><output id="w3o">0.5</output></div></div>
+    <div class="grp tight" id="freqbox"><div class="lab" data-i18n="freq">반송파 주파수</div>
+      <div class="row2"><div><div class="hint" style="margin:0 0 5px">f₁ (Hz)</div><input type="number" id="f1" value="2000" oninput="showDf()"></div><div><div class="hint" style="margin:0 0 5px">f₂ (Hz)</div><input type="number" id="f2" value="2100" oninput="showDf()"></div></div>
+      <div class="hint" id="dfhint" style="margin-top:6px">Δf = 100 Hz</div></div>
+    <div class="grp tight" id="dualfreqbox" style="display:none"><div class="lab" data-i18n="dualfreq">이중 TI 주파수 (Hz)</div>
+      <div class="row2"><div><div class="hint" style="margin:0 0 5px">A·ch1</div><input type="number" id="df1" value="2000"></div><div><div class="hint" style="margin:0 0 5px">A·ch2</div><input type="number" id="df2" value="2010"></div></div>
+      <div class="row2" style="margin-top:7px"><div><div class="hint" style="margin:0 0 5px">B·ch3</div><input type="number" id="df3" value="2500"></div><div><div class="hint" style="margin:0 0 5px">B·ch4</div><input type="number" id="df4" value="2510"></div></div>
+      <div class="hint" style="margin-top:6px;opacity:.7" data-i18n="dualHint">A쌍·B쌍은 각각 Δf로 맥놀이, 두 대역은 떨어뜨려 쌍간 간섭 방지</div></div>
+    <div class="runrow"><button class="cta" id="run" onclick="compute()" data-i18n="run">계산</button><button class="reset" onclick="resetAll()" data-i18n="reset">↺ 초기화</button></div>
+    <div class="prog" id="prog"><div class="pbar"><div class="pfill" id="pfill"></div></div><div class="pmeta"><span id="pstage">—</span><span id="ppct">0%</span></div></div>
+    <div class="grp" id="s4lgrp" style="margin-top:11px"><div class="selrow"><div class="lab" style="margin:0" data-i18n="s4lTitle">Sim4Life 정밀 검증</div><span class="count" id="s4lstat">idle</span></div>
+      <div class="hint" style="margin-top:0" data-i18n="s4lHint">계산한 몽타주를 Sim4Life 로 보내 머리 전체를 유한요소로 다시 풉니다 (약 7분). 리드필드는 뇌 복셀만 담아 두피 전류밀도 같은 안전 지표를 못 봅니다 — 그게 여기서만 나옵니다. 전에 같은 분석을 했다면 즉시 꺼내옵니다.</div>
+      <button class="btn" style="margin-top:9px;width:100%" onclick="s4lSendMontage()" data-i18n="s4lSend">▶ Sim4Life 로 보내기</button>
+      <div class="prog" id="s4lprog" style="display:none;margin-top:9px"><div class="pbar"><div class="pfill" id="s4lfill"></div></div><div class="pmeta"><span id="s4lstage">—</span><span id="s4lpct">0%</span></div>
+        <button class="reset" id="s4lcancel" style="display:none;width:100%;margin-top:8px;padding:8px" onclick="s4lCancel()" data-i18n="s4lCancel">■ 취소</button></div>
+      <div class="hint" id="s4llog" style="margin-top:6px;white-space:pre-wrap;max-height:130px;overflow:auto"></div></div>
+  </div>
+
+  <div class="stage">
+    <div class="viewer" id="viewer"><div class="vhud" id="vhud"></div><div class="cbar" id="cbar"></div><div class="cbar-l" id="cbarHi" style="top:14px" data-i18n="strong">강</div><div class="cbar-l" id="cbarLo" style="bottom:14px" data-i18n="weak">약</div>
+      <div class="fmode" id="fmode"><button class="on" id="fmInt" onclick="setFMode('intensity')" data-i18n="fmField">필드</button><button id="fmAf" onclick="setFMode('af')" disabled data-i18n="fmAf">활성화함수</button><button id="fmEf" onclick="setFMode('efield')" disabled data-i18n="fmVec">벡터·파형</button></div>
+      <div class="resolp" id="resolp">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><b data-i18n="resolTitle">활성 임계</b>
+          <button class="rp on" id="refT" onclick="resolSetRef('target')" data-i18n="refTgt">표적 대비</button><button class="rp" id="refM" onclick="resolSetRef('max')" data-i18n="refMax">최대 대비</button>
+          <input type="range" id="resolSl" min="0" max="100" value="50" step="1" oninput="resolCompute()" style="width:118px">
+          <span id="resolPct">50%</span>
+          <button class="rp" onclick="resolPreset(50)">50%</button><button class="rp" onclick="resolPreset(90)">90%</button></div>
+        <div id="resolOut" style="margin-top:5px;color:var(--dim)"></div></div>
+      <div class="eflegend" id="eflegend"><span style="color:#ff7a7a">▬</span> E₁ (반송파1) &nbsp; <span style="color:#6aa8ff">▬</span> E₂ (반송파2)<br><span data-i18n="efHint">화살표 길이=세기 · 점 클릭=분석(최강점 스냅) · Ctrl+휠=깊이 · 그냥 휠=줌</span></div>
+      <div class="fpanel" id="fpanel"><span class="cls" onclick="document.getElementById('fpanel').style.display='none'">✕</span>
+        <h4 id="fpTitle">위치 분석</h4><div id="fpInfo"></div>
+        <div id="fpDrive" style="font-size:10px;margin:2px 0"></div>
+        <canvas id="fgraph" width="268" height="84" style="margin-top:3px"></canvas>
+        <div class="wsec field" data-i18n="wsecField">필드 드라이브 (E) — 두 반송파 → 간섭 → 엔벨로프 · 축별 (★=최적)</div>
+        <canvas id="fwaveX" width="268" height="48"></canvas><canvas id="fwaveY" width="268" height="48"></canvas><canvas id="fwaveZ" width="268" height="48"></canvas>
+        <div class="wsec af" data-i18n="wsecAf">활성화함수 드라이브 (∂E/∂s) — 축별 (★=최적)</div>
+        <canvas id="afwaveX" width="268" height="48"></canvas><canvas id="afwaveY" width="268" height="48"></canvas><canvas id="afwaveZ" width="268" height="48"></canvas></div></div>
+    <div class="analysis" id="analysis">
+      <div class="abar"><button class="btn savebtn" id="savebtn" onclick="saveResult()" data-i18n="saveResult">결과 저장</button></div>
+      <div id="freqwarn" style="display:none"></div>
+      <div class="metrics">
+        <div class="mc" id="mcM1"><div class="k">M1</div><div class="v" id="m1">—</div><div class="u" data-i18n="m1u">표적 세기 (V/m)</div></div>
+        <div class="mc" id="mcM2"><div class="k">M2</div><div class="v" id="m2">—</div><div class="u" data-i18n="m2u">초점 정확도 ↑</div></div>
+        <div class="mc" id="mcM3"><div class="k">M3</div><div class="v" id="m3">—</div><div class="u" data-i18n="m3u">누출 % ↓</div></div>
+        <div class="mc" id="mcM4"><div class="k" id="m4k">WP</div><div class="v" id="m4">—</div><div class="u" id="m4u" data-i18n="wpu">종합 점수</div></div>
+      </div>
+      <div class="panel" id="topbox" style="display:none"><h3 data-i18n="mTop">상위 조합</h3><p class="psub" data-i18n="mTopSub">가중치 기준 상위 5 — 클릭해서 보기</p><div class="toplist" id="toplist"></div></div>
+      <div class="panel" id="detail" style="display:none"><h3 data-i18n="mDetail">상세 분석</h3><div class="agrid" id="agrid"></div></div>
+      <div class="panel"><h3 data-i18n="mMontage">몽타주 · 프로토콜</h3><p class="psub" data-i18n="mMontageSub">전극 위치·전류 (빨강=채널1 f₁, 파랑=채널2 f₂, 극성은 +/−) · 자극기 설정</p><div id="montage" class="empty" data-i18n="emptyState">표적·전극·모드를 고르고 계산을 누르세요.</div></div>
+      <div class="panel" id="histbox" style="display:none"><h3 data-i18n="mHist">누적 분포</h3><p class="psub" data-i18n="mHistSub">각 세기 이상으로 자극된 부피 비율 (표적 vs 비표적)</p><canvas class="plot" id="hist" height="150"></canvas></div>
+      <div class="panel" id="s4lbox" style="display:none"><h3 data-i18n="s4lPanel">Sim4Life 머리 전체 분석</h3>
+        <p class="psub" id="s4lsub"></p>
+        <div id="s4ltgt"></div>
+        <div id="s4lgrid" style="display:none"></div><div id="s4ltbl" style="display:none"></div>
+        <div id="s4limgs" style="display:none"></div></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+<script>
+const T={ko:{target:"표적",mode:"자극 모드",gevd:"분산 자극 (방향성)",dual:"4채널 이중TI",selMode:"(β) 선택성",huangMode:"(β) Huang",tmMode:"시분할",tmSlots:"최대 슬롯 수",tmElec:"전극 예산",tmFloor:"강도 유지율",tmHint:"전극은 슬롯 간 재사용됩니다(예산 < 4×슬롯 가능). 강도 유지율이 높을수록 시분할 이점이 커지는 영역입니다.",pmaxLabel:"Pmax — 초점 ↔ 강도",pmaxHint:"낮을수록 초점(강도↓) · 높을수록 강도(=HD-TES 융합). off 변조파워 상한.",dualfreq:"이중 TI 주파수 (Hz)",kLabel:"사용할 전극 개수 (K)",kHint:"K개 전극을 두 반송파에 자유 분산. 방향(축)은 표적서 자동, 간섭으로 방향 선택성 극대화.",elec:"사용가능 전극",selected:"선택",elecHint:"3D에서 전극 클릭=선택 · 드래그=회전",selAll:"전체 선택",deselAll:"모두 해제",presets:"내 프리셋",savePreset:"＋ 저장",presetHint:"선택 조합을 저장해 재사용",weights:"지표 가중치 (최적안 선택)",wM1:"M1 세기",wM2:"M2 초점",wM3:"M3 누출↓",pctl:"M3 등백분위 p",freq:"반송파 주파수",run:"계산",reset:"↺ 초기화",saveResult:"결과 저장",needElec:"먼저 자극할 전극을 3D에서 선택하세요 (최소 4개).",coordHint:"표적 좌표(mm)·반경. 근사값이니 필요시 조정하세요.",strong:"강",weak:"약",fmField:"필드",fmAf:"활성화함수",fmVec:"벡터·파형",
+  m1u:"표적 세기 (V/m)",m2u:"초점 정확도 ↑",m3u:"누출 % ↓",wpu:"종합 점수",mTop:"상위 조합",mTopSub:"가중치 기준 상위 5 — 클릭해서 보기",mDetail:"상세 분석",mHist:"누적 분포",mHistSub:"각 세기 이상으로 자극된 부피 비율 (표적 vs 비표적)",mMontage:"자극 설정 (전극·전류)",mMontageSub:"전극 위치와 전류 (빨강=채널1 f₁, 파랑=채널2 f₂, 극성은 +/−) · 자극기에 넣을 설정",mPareto:"트레이드오프 지도",mParetoSub:"세기↔초점↔누출의 최적 균형점들 (하나를 개선하면 다른 게 나빠지는 경계)",emptyState:"표적·전극·모드를 고르고 계산을 누르세요.",
+  m1t:"표적 내부 자극 세기의 중앙값 (TI 변조 엔벨로프, V/m). 높을수록 강하게 자극.",m2t:"표적 대 비표적 세기의 비 (RMS²). 높을수록 초점이 좁고 정확.",m3t:"표적보다 강하게 자극된 비표적 부피의 비율(%). 낮을수록 누출이 적음.",wpt:"M1·M2·M3를 가중치로 합친 종합 점수. 슬라이더로 조정.",
+  sVol:"표적 부피",sDepth:"표적 깊이",sCenter:"표적 중심",sMed:"세기 중앙값",sRange:"세기 범위",sMax:"세기 최대",sPeak:"엔벨로프 피크",sIn:"표적 내",sOut:"표적 밖",sOff:"비표적 최대",sHfT:"HF peak(표적)",sHfO:"HF peak(off)",vox:"복셀",secs:"초",
+ 
+  s4lTitle:"Sim4Life 정밀 검증",s4lSend:"▶ Sim4Life 로 보내기",s4lCancel:"■ 취소",s4lPanel:"Sim4Life 머리 전체 분석",
+  s4lHint:"계산한 몽타주를 Sim4Life 로 보내 머리 전체를 유한요소로 다시 풉니다 (약 7분). 리드필드는 뇌 복셀만 담아 두피 전류밀도 같은 안전 지표를 못 봅니다 — 그게 여기서만 나옵니다. 전에 같은 분석을 했다면 즉시 꺼내옵니다.",
+  dualHint:"A쌍·B쌍은 각각 Δf로 맥놀이, 두 대역은 떨어뜨려 쌍간 간섭 방지",resolTitle:"활성 임계",refTgt:"표적 대비",refMax:"최대 대비",ptTitle:"위치 분석",
+  efHint:"화살표 길이=세기 · 점 클릭=분석(최강점 스냅) · Ctrl+휠=깊이 · 그냥 휠=줌",
+  wsecField:"필드 드라이브 (E) — 두 반송파 → 간섭 → 엔벨로프 · 축별 (★=최적)",
+  wsecAf:"활성화함수 드라이브 (∂E/∂s) — 축별 (★=최적)",
+ st_준비:"준비",st_정밀화:"정밀화",st_몽타주사전계산:"몽타주 사전계산",st_비율폴리싱:"비율 폴리싱","st_필드·AF사전계산":"필드·AF 사전계산",st_전수탐색:"전수탐색",st_NSGA진화:"NSGA 진화",st_GEVD:"GEVD",st_분산최적화:"분산 최적화",st_이중TI최적화:"이중 TI 최적화",st_선택성최적화:"선택성 최적화",st_필드계산:"필드 계산",st_완료:"완료"},
+ en:{target:"Target",mode:"Stimulation mode",gevd:"Distributed (dir.)",dual:"4ch Dual TI",selMode:"(β) Selective",huangMode:"(β) Huang",tmMode:"Time-mux",tmSlots:"Max slots",tmElec:"Electrode budget",tmFloor:"Strength floor",tmHint:"Electrodes are reused across slots (budget can be < 4×slots). Higher strength floor = regime where time-mux gains appear.",pmaxLabel:"Pmax — focal ↔ intense",pmaxHint:"Lower=focal (weaker) · higher=intense (=HD-TES fusion). Off-target modulation power cap.",dualfreq:"Dual TI frequencies (Hz)",kLabel:"Number of electrodes (K)",kHint:"K electrodes freely split across two carriers. Axis auto from target; interference maximizes directional selectivity.",elec:"Available electrodes",selected:"selected",elecHint:"Click electrodes in 3D · drag to rotate",selAll:"Select all",deselAll:"Clear",presets:"My presets",savePreset:"＋ Save",presetHint:"Save electrode sets to reuse",weights:"Metric weights (best pick)",wM1:"M1 strength",wM2:"M2 focality",wM3:"M3 leakage↓",pctl:"M3 isopercentile p",freq:"Carrier frequency",run:"Compute",reset:"↺ Reset",saveResult:"Save result",needElec:"Select electrodes in the 3D view first (at least 4).",coordHint:"Target coords(mm)·radius. Approximate — adjust if needed.",strong:"hi",weak:"lo",fmField:"Field",fmAf:"Activating fn",fmVec:"Vectors & waves",
+  m1u:"target strength (V/m)",m2u:"focality ↑",m3u:"leakage % ↓",wpu:"overall score",mTop:"Top combos",mTopSub:"Top 5 by weights — click to view",mDetail:"Detailed analysis",mHist:"Cumulative distribution",mHistSub:"Volume fraction above each level (target vs off-target)",mMontage:"Stimulation setup (electrodes·currents)",mMontageSub:"Electrode positions and currents (red=channel 1 f₁, blue=channel 2 f₂, polarity by +/−) · stimulator settings",mPareto:"Trade-off map",mParetoSub:"Best balance points of strength↔focality↔leakage (improving one worsens another)",emptyState:"Pick target·electrodes·mode, then Compute.",
+  m1t:"Median TI modulation-envelope strength inside the target (V/m). Higher = stronger stimulation.",m2t:"Ratio of target vs off-target strength (RMS²). Higher = tighter, more accurate focus.",m3t:"Fraction (%) of off-target volume stimulated stronger than the target. Lower = less leakage.",wpt:"Weighted sum of M1·M2·M3. Adjust with sliders.",
+  sVol:"Target volume",sDepth:"Target depth",sCenter:"Target center",sMed:"Strength median",sRange:"Strength range",sMax:"Strength max",sPeak:"Envelope peak",sIn:"in target",sOut:"off target",sOff:"Off-target max",sHfT:"HF peak(target)",sHfO:"HF peak(off)",vox:"vox",secs:"s",
+ 
+  s4lTitle:"Sim4Life verification",s4lSend:"▶ Send to Sim4Life",s4lCancel:"■ Cancel",s4lPanel:"Sim4Life whole-head analysis",
+  s4lHint:"Send the computed montage to Sim4Life and re-solve the whole head with FEM (~7 min). The leadfield holds brain voxels only, so safety numbers like scalp current density are invisible there — they come from here. Instant if the same analysis was run before.",
+  dualHint:"Pairs A and B each beat at their own Δf; the two bands are kept apart to avoid cross-pair interference",resolTitle:"Activation threshold",refTgt:"vs target",refMax:"vs max",ptTitle:"Point",
+  efHint:"arrow length = strength · click a point to analyse (snaps to peak) · Ctrl+wheel = depth · wheel = zoom",
+  wsecField:"Field drive (E) — two carriers → interference → envelope · per axis (★ = best)",
+  wsecAf:"Activating-function drive (∂E/∂s) — per axis (★ = best)",
+ st_준비:"Prep",st_정밀화:"Refine",st_몽타주사전계산:"Precompute montages",st_비율폴리싱:"Ratio polish","st_필드·AF사전계산":"Precompute field·AF",st_전수탐색:"Exhaustive",st_NSGA진화:"NSGA evolve",st_GEVD:"GEVD",st_분산최적화:"Distributed opt.",st_이중TI최적화:"Dual TI opt.",st_선택성최적화:"Selectivity opt.",st_필드계산:"Field calc",st_완료:"Done"}};
+let LANG=localStorage.getItem('ti_lang')||'ko';
+function t(k){ return (T[LANG][k]!==undefined)?T[LANG][k]:(T.ko[k]||k); }
+// 사전에 넣을 만큼 재사용되지 않는 문구는 이 인라인 헬퍼로 — 키 80개를 만드는 것보다 읽기 쉽다
+function t2(ko,en){ return LANG==='ko'?ko:en; }
+const METHOD_EN={'전수탐색':'Exhaustive','NSGA-II':'NSGA-II','분산(방향성 축)':'Distributed (dir.)','이중 TI (2+2)':'Dual TI (2+2)','(β) 선택성':'(β) Selective','(β) Huang 초점':'(β) Huang focal','분산 (방향성·Huang)':'Distributed (dir.·Huang)'};
+function mlabel(m){ return (LANG==='en'&&METHOD_EN[m])?METHOD_EN[m]:(m||''); }
+function toggleLang(){ LANG=LANG==='ko'?'en':'ko'; localStorage.setItem('ti_lang',LANG); applyLang(); }
+function applyLang(){ document.documentElement.lang=LANG; document.getElementById('langbtn').textContent=LANG==='ko'?'EN':'한국어';
+  document.querySelectorAll('[data-i18n]').forEach(el=>el.textContent=t(el.dataset.i18n));
+  document.getElementById('mcM1').title=t('m1t'); document.getElementById('mcM2').title=t('m2t'); document.getElementById('mcM3').title=t('m3t'); document.getElementById('mcM4').title=t('wpt');
+  if(INIT)buildTargets(); if(LAST)renderCore(LAST,true);
+  if(S4LRES) renderS4L(S4LRES.res, S4LRES.job);   // ★이 줄이 없으면 S4L 패널만 옛 언어로 남는다
+  const _sc=document.getElementById('s4lcancel'); if(_sc) _sc.textContent=t2('■ 취소','■ Cancel'); }
+
+let INIT=null,MODE='classic',SEL=new Set(),RESULT=false,PARETO=[],LAST=null;
+let scene,camera,renderer,labelRenderer,controls,ptGeo,elMeshes={},elLabels={},centroid=[0,0,0],raycaster,pointer,down=null,tgtCloud,tgtGeo,gizmoScene,gizmoCam;
+let FMODE='intensity',efE1=null,efE2=null,efPts=null,efData=null,rayHits=[],rayIdx=0,pickMarker=null;
+let driveArr=null,drivePeak=1,driveTgtPeak=1,driveTgt=null,resolRef='target',_resolTimer=null;
+const W=()=>[+w1.value,+w2.value,+w3.value];
+function inferno(x){ x=Math.max(0,Math.min(1,x)); const s=[[0,0,4],[40,11,84],[101,21,110],[159,42,99],[212,72,66],[245,125,21],[250,193,39],[252,255,164]];
+  const f=x*7,i=Math.floor(f),r=f-i,a=s[i],b=s[Math.min(i+1,7)]; return [(a[0]+(b[0]-a[0])*r)/255,(a[1]+(b[1]-a[1])*r)/255,(a[2]+(b[2]-a[2])*r)/255]; }
+function viridis(x){ x=Math.max(0,Math.min(1,x)); const s=[[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]];
+  const f=x*4,i=Math.floor(f),r=f-i,a=s[i],b=s[Math.min(i+1,4)]; return [(a[0]+(b[0]-a[0])*r)/255,(a[1]+(b[1]-a[1])*r)/255,(a[2]+(b[2]-a[2])*r)/255]; }
+const VIRIDIS_CSS='linear-gradient(to top,#440154,#414487,#2a788e,#22a884,#7ad151,#fde725)';
+
+async function init(){ INIT=await (await fetch('/api/init')).json(); buildTargets();
+  document.getElementById('cx').value=INIT.brain_center[0]; document.getElementById('cy').value=INIT.brain_center[1]; document.getElementById('cz').value=INIT.brain_center[2];
+  loadPresets(); init3D(); applyLang(); onTargetChange();
+  document.getElementById('status').textContent=`${INIT.electrodes.length} el · ${INIT.cloud.length} vox`;
+  s4lRestore(); }
+// S4L 잡은 브라우저보다 오래 산다(몽타주 약 11분). 새로고침해도 이어서 보이게 한다.
+async function s4lRestore(){
+  let js; try{ js=(await (await fetch('/api/jobs?kind=montage')).json()).jobs||[]; }catch(e){ return; }
+  // **돌고 있는 잡만** 이어받는다. 끝난 옛 결과를 자동으로 띄우지는 않는다 —
+  // 지금 화면의 몽타주와 무관한 값이 남아 있으면 어느 몽타주 것인지 헷갈린다.
+  const run=js.find(j=>!j.done);
+  if(run){ document.getElementById('s4lprog').style.display='block'; S4LJOB=run.id; s4lPoll(); }
+}
+function buildTargets(){ const ts=document.getElementById('target'),cur=ts.value; ts.innerHTML='';
+  INIT.targets.forEach(t2=>{ const o=document.createElement('option'); o.value=t2.id; o.textContent=t2[LANG]; ts.appendChild(o); }); if(cur)ts.value=cur; }
+function targetObj(){ return INIT.targets.find(t2=>t2.id===document.getElementById('target').value); }
+function onTargetChange(){ const t2=targetObj(); const box=document.getElementById('coordbox');
+  if(t2.kind==='mask'){ box.style.display='none'; }
+  else{ box.style.display='block'; const c=t2.center||INIT.brain_center; cx.value=c[0]; cy.value=c[1]; cz.value=c[2]; if(t2.radius)cr.value=t2.radius; }
+  updateMarker(); }
+function setMode(m){ MODE=m; document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('on',b.dataset.mode===m));
+  document.getElementById('kbox').style.display=m==='gevd'?'block':'none'; document.getElementById('wtgrp').style.display=(m==='gevd'||m==='huang')?'none':'block';
+  document.getElementById('huangbox').style.display=m==='gevd'?'block':'none';   // 분산=Huang 백엔드, Pmax 노출
+  document.getElementById('tmbox').style.display=m==='timemux'?'block':'none';
+  document.getElementById('dualfreqbox').style.display=m==='dual'?'block':'none'; document.getElementById('freqbox').style.display=m==='dual'?'none':'block'; }
+function showDf(){ const d=Math.abs((+f2.value)-(+f1.value)), h=document.getElementById('dfhint');
+  if(!isFinite(d)){ h.textContent='—'; return; }
+  const bad=d<1e-6, warn=d<1||d>0.2*((+f1.value)+(+f2.value))/2;
+  h.innerHTML=(LANG==='ko'?'Δf = ':'Δf = ')+d.toFixed(d<10?2:0)+' Hz'+
+    (bad?` <b style="color:#ff9a9a">— ${LANG==='ko'?'맥놀이 없음 · TI 성립 안 함':'no beat · not TI'}</b>`
+        :(warn?` <b style="color:#ffcf8a">— ${LANG==='ko'?'권장 범위 밖':'outside usual range'}</b>`
+              :` <span style="opacity:.7">(${LANG==='ko'?'엔벨로프 주파수':'envelope freq'})</span>`));
+  h.style.color=bad?'#ff9a9a':(warn?'#ffcf8a':'var(--dim)'); }
+function curTargetSpec(){ const t2=targetObj(); if(t2.kind==='mask')return {id:t2.id}; return {kind:'sphere',center:[+cx.value,+cy.value,+cz.value],radius:+cr.value}; }
+function curTargetCenter(){ const t2=targetObj(); if(t2.kind==='mask')return t2.center; return [+cx.value,+cy.value,+cz.value]; }
+
+function init3D(){ const box=document.getElementById('viewer'),w=box.clientWidth,h=box.clientHeight;
+  scene=new THREE.Scene(); camera=new THREE.PerspectiveCamera(45,w/h,1,4000);
+  renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,preserveDrawingBuffer:true}); renderer.setSize(w,h); renderer.setPixelRatio(Math.min(devicePixelRatio,2)); box.appendChild(renderer.domElement);
+  labelRenderer=new THREE.CSS2DRenderer(); labelRenderer.setSize(w,h); labelRenderer.domElement.style.cssText='position:absolute;inset:0;pointer-events:none'; box.appendChild(labelRenderer.domElement);
+  const c=INIT.cloud,n=c.length; centroid=[0,0,0]; c.forEach(p=>{centroid[0]+=p[0];centroid[1]+=p[1];centroid[2]+=p[2];}); centroid=centroid.map(v=>v/n);
+  ptGeo=new THREE.BufferGeometry(); const pos=new Float32Array(n*3),col=new Float32Array(n*3);
+  for(let i=0;i<n;i++){ pos[i*3]=c[i][0]-centroid[0];pos[i*3+1]=c[i][1]-centroid[1];pos[i*3+2]=c[i][2]-centroid[2]; col[i*3]=.15;col[i*3+1]=.17;col[i*3+2]=.22; }
+  ptGeo.setAttribute('position',new THREE.BufferAttribute(pos,3)); ptGeo.setAttribute('color',new THREE.BufferAttribute(col,3));
+  scene.add(new THREE.Points(ptGeo,new THREE.PointsMaterial({size:1.5,vertexColors:true,sizeAttenuation:true,transparent:true,opacity:.4})));
+  INIT.electrodes.forEach(e=>{ const m=new THREE.Mesh(new THREE.SphereGeometry(3.6,14,14),new THREE.MeshBasicMaterial({color:0x39424f}));
+    m.position.set(e.xyz[0]-centroid[0],e.xyz[1]-centroid[1],e.xyz[2]-centroid[2]); m.userData=e.name; scene.add(m); elMeshes[e.name]=m;
+    const d=document.createElement('div'); d.className='elabel'; d.textContent=e.name; const lo=new THREE.CSS2DObject(d); m.add(lo); elLabels[e.name]=lo; });
+  // 표적 = 초록 점 구름 (반투명·큰점 → 세기(inferno) 위에 겹쳐도 세기가 비쳐 보이고, 초록은 inferno에 없어 구분됨)
+  tgtGeo=new THREE.BufferGeometry(); tgtGeo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(3),3));
+  tgtCloud=new THREE.Points(tgtGeo,new THREE.PointsMaterial({color:0x3df08a,size:3.0,sizeAttenuation:true,transparent:true,opacity:0.2,depthWrite:false})); scene.add(tgtCloud);
+  // 뇌 앞쪽 화살표 (작게·반대방향·라벨없음) — 전두극(Fp/AF)−후두(O/PO) 전극위치로 전방 계산
+  (function(){ const bn={}; INIT.electrodes.forEach(e=>bn[e.name]=e.xyz);
+    const avg=ns=>{ let v=[0,0,0],k=0; ns.forEach(n=>{ if(bn[n]){v[0]+=bn[n][0];v[1]+=bn[n][1];v[2]+=bn[n][2];k++;} }); return k?v.map(x=>x/k):null; };
+    const fr=avg(['Fp1','Fp2','Fpz','AF7','AF8','AF3','AF4']), bk=avg(['O1','O2','Oz','POz','PO7','PO8']); if(!fr||!bk)return;
+    const ant=new THREE.Vector3(fr[0]-bk[0],fr[1]-bk[1],fr[2]-bk[2]).normalize();
+    const org=new THREE.Vector3(fr[0]-centroid[0],fr[1]-centroid[1],fr[2]-centroid[2]).addScaledVector(ant,60);
+    scene.add(new THREE.ArrowHelper(ant.clone().negate(),org,26,0x45d39e,9,6)); })();
+  camera.position.set(0,30,360); controls=new THREE.OrbitControls(camera,renderer.domElement); controls.enableDamping=true;
+  raycaster=new THREE.Raycaster(); pointer=new THREE.Vector2();
+  renderer.domElement.addEventListener('pointerdown',e=>down={x:e.clientX,y:e.clientY});
+  renderer.domElement.addEventListener('pointerup',e=>{ if(!down)return; const mv=Math.hypot(e.clientX-down.x,e.clientY-down.y); down=null; if(mv<5)pick(e); });
+  addEventListener('resize',()=>{ const w=box.clientWidth,h=box.clientHeight; camera.aspect=w/h; camera.updateProjectionMatrix(); renderer.setSize(w,h); labelRenderer.setSize(w,h); });
+  // Ctrl(⌘)+휠 = 깊이 조정 (같이 누를 때만). Ctrl 떼면 즉시 일반 휠 줌으로 복귀.
+  renderer.domElement.addEventListener('wheel',e=>{ if(FMODE==='efield'&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); e.stopPropagation(); if(rayHits.length)stepDepth(e.deltaY>0?1:-1); } },{passive:false});
+  addEventListener('keydown',e=>{ if((e.key==='Control'||e.key==='Meta')&&FMODE==='efield'&&controls)controls.enableZoom=false; });
+  const _rz=()=>{ if(controls)controls.enableZoom=true; }; addEventListener('keyup',e=>{ if(e.key==='Control'||e.key==='Meta')_rz(); }); addEventListener('blur',_rz);
+  initGizmo();
+  refreshSel(); (function loop(){ requestAnimationFrame(loop); controls.update();
+    renderer.render(scene,camera); labelRenderer.render(scene,camera);
+    // 좌측하단 좌표축 gizmo (CAD식) — 같은 캔버스 코너라 여길 드래그해도 뷰가 회전됨
+    const sz=Math.round(Math.min(112,box.clientWidth*0.2));
+    const d=camera.position.clone().sub(controls.target).normalize();
+    gizmoCam.position.copy(d.multiplyScalar(3.8)); gizmoCam.up.copy(camera.up); gizmoCam.lookAt(0,0,0);
+    renderer.autoClear=false; renderer.setViewport(10,10,sz,sz); renderer.setScissor(10,10,sz,sz); renderer.setScissorTest(true);
+    renderer.clearDepth(); renderer.render(gizmoScene,gizmoCam);
+    renderer.setScissorTest(false); renderer.autoClear=true; renderer.setViewport(0,0,box.clientWidth,box.clientHeight);
+  })(); }
+function initGizmo(){ gizmoScene=new THREE.Scene(); gizmoCam=new THREE.PerspectiveCamera(50,1,0.1,100);
+  const ax=(v,c,t)=>{ gizmoScene.add(new THREE.ArrowHelper(v,new THREE.Vector3(0,0,0),1,c,0.32,0.2));
+    const cv=document.createElement('canvas'); cv.width=cv.height=64; const g=cv.getContext('2d');
+    g.font='bold 46px ui-monospace'; g.fillStyle='#'+c.toString(16).padStart(6,'0'); g.textAlign='center'; g.textBaseline='middle'; g.fillText(t,32,36);
+    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),depthTest:false,transparent:true}));
+    sp.position.copy(v).multiplyScalar(1.34); sp.scale.set(0.5,0.5,1); gizmoScene.add(sp); };
+  ax(new THREE.Vector3(1,0,0),0xff6b6b,'X'); ax(new THREE.Vector3(0,1,0),0x45d39e,'Y'); ax(new THREE.Vector3(0,0,1),0x5b9bff,'Z'); }
+function pick(e){ const b=renderer.domElement.getBoundingClientRect(); pointer.x=((e.clientX-b.left)/b.width)*2-1; pointer.y=-((e.clientY-b.top)/b.height)*2+1;
+  raycaster.setFromCamera(pointer,camera);
+  if(FMODE==='efield'){ if(efPts&&efData){ raycaster.params.Points.threshold=4.5; const h=raycaster.intersectObject(efPts);
+    if(h.length){ let bi=0; for(let i=1;i<h.length;i++){ if(efData.env[h[i].index]>efData.env[h[bi].index])bi=i; }  // 광선상 envelope 최대점 스냅
+      rayHits=h; rayIdx=bi; selectRayPoint(); } } return; }
+  if(RESULT) return;   // 결과 표시 중엔 전극 클릭 무시 — 결과·모드 유지 (재편집은 ↺초기화)
+  const hit=raycaster.intersectObjects(Object.values(elMeshes)); if(hit.length){ toggle(hit[0].object.userData); } }
+
+// ---------- 시각화 모드: 강도(필드) / 활성화함수 / 전기장 ----------
+function setFMode(m){ if(m!=='intensity'&&!RESULT)return; FMODE=m;
+  document.getElementById('fmInt').classList.toggle('on',m==='intensity');
+  document.getElementById('fmAf').classList.toggle('on',m==='af');
+  document.getElementById('fmEf').classList.toggle('on',m==='efield');
+  document.getElementById('resolp').style.display=(m==='intensity'||m==='af')?'block':'none';
+  if(m!=='efield'){ clearEfield(); if(controls)controls.enableZoom=true; document.getElementById('eflegend').style.display='none'; document.getElementById('fpanel').style.display='none'; }
+  if(m==='efield'){ document.getElementById('cbar').style.display='none'; cbarHi.style.display='none'; cbarLo.style.display='none';
+    dimCloud(true); document.getElementById('eflegend').style.display='block';
+    document.getElementById('vhud').innerHTML='<b>'+(LANG==='ko'?'벡터·파형':'Vectors')+'</b> · '+(LANG==='ko'?'E₁·E₂ 벡터 · 점 클릭=위치 분석':'E1·E2 vectors · click a point'); fetchEfield(); }
+  else if(m==='af'){ fetchAF(); }
+  else if(LAST){ renderCore(LAST); } }
+async function fetchAF(){ if(!LAST)return; try{
+  const d=await (await fetch('/api/affield',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({montage:LAST.best,target:curTargetSpec()})})).json();
+  if(d.error){ console.warn(d.error); return; } renderAF(d); }catch(e){ console.warn(e); } }
+function renderAF(d){ const af=d.af,mx=d.afmax||Math.max(...af)||1,col=ptGeo.attributes.color.array;
+  for(let i=0;i<af.length;i++){ const c=inferno(Math.min(af[i]/mx,1)); col[i*3]=c[0];col[i*3+1]=c[1];col[i*3+2]=c[2]; }
+  ptGeo.attributes.color.needsUpdate=true;
+  const cb=document.getElementById('cbar'); cb.style.display='block'; cb.style.background=''; cbarHi.style.display='block'; cbarLo.style.display='block';
+  document.getElementById('vhud').innerHTML='<b>'+(LANG==='ko'?'활성화함수':'Activating fn')+'</b> · '+(LANG==='ko'?`표적축[${d.direction.join(',')}] 방향 · 밝을수록 AF변조↑`:'along target axis · brighter=stronger');
+  setDrive(af,LAST&&LAST.field?LAST.field.target:null); resolCompute(); }
+// ---------- 분해능(활성 영역·초점 크기): 최대 대비 임계 초과 = 활성 ----------
+function setDrive(arr,tgt){ driveArr=arr; driveTgt=tgt||null; drivePeak=0; driveTgtPeak=0;
+  for(let i=0;i<arr.length;i++){ if(arr[i]>drivePeak)drivePeak=arr[i]; if(tgt&&tgt[i]&&arr[i]>driveTgtPeak)driveTgtPeak=arr[i]; }
+  if(!drivePeak)drivePeak=1; if(!driveTgtPeak)driveTgtPeak=drivePeak; }
+function resolPreset(v){ document.getElementById('resolSl').value=v; resolCompute(); }
+function resolSetRef(r){ resolRef=r; document.getElementById('refT').classList.toggle('on',r==='target'); document.getElementById('refM').classList.toggle('on',r==='max'); resolCompute(); }
+function resolCompute(){ if(!driveArr||!ptGeo)return; const frac=+document.getElementById('resolSl').value/100;
+  document.getElementById('resolPct').textContent=Math.round(frac*100)+'%';
+  // 3D 클라우드 하이라이트(즉시·근사) — 임계 초과 복셀만 컬러
+  const ref=(resolRef==='target')?driveTgtPeak:drivePeak, thr=frac*ref, col=ptGeo.attributes.color.array;
+  for(let i=0;i<driveArr.length;i++){ if(driveArr[i]>=thr){ const c=inferno(Math.min(driveArr[i]/drivePeak,1)); col[i*3]=c[0];col[i*3+1]=c[1];col[i*3+2]=c[2]; }
+    else{ col[i*3]=.05;col[i*3+1]=.06;col[i*3+2]=.08; } }
+  ptGeo.attributes.color.needsUpdate=true;
+  clearTimeout(_resolTimer); _resolTimer=setTimeout(fetchResol,200); }   // 정밀 지표는 조밀 백엔드에서
+async function fetchResol(){ if(!LAST)return; const frac=+document.getElementById('resolSl').value/100;
+  const out=document.getElementById('resolOut'); out.innerHTML='<span style="color:var(--dim)">'+t2('정밀 계산 중…','refining…')+'</span>';
+  try{ const d=await (await fetch('/api/resolution',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({montage:LAST.best,target:curTargetSpec(),mode:(FMODE==='af'?'af':'field'),ref:resolRef,frac})})).json();
+    if(d.error){ out.innerHTML='<span style="color:var(--dim)">'+d.error+'</span>'; return; }
+    const vstr=d.Vact>=1000?(d.Vact/1000).toFixed(2)+' cm³':Math.round(d.Vact)+' mm³';
+    out.innerHTML=`${LANG==='ko'?'활성부피':'vol'} <b>${vstr}</b> · ${LANG==='ko'?'유효지름':'diam'} <b style="color:#ffd76a">${d.diam.toFixed(1)} mm</b> · ${LANG==='ko'?'표적커버리지':'cov'} <b>${d.coverage.toFixed(0)}%</b> · ${LANG==='ko'?'정밀도(표적내)':'prec'} <b>${d.precision.toFixed(0)}%</b>`;
+  }catch(e){ out.innerHTML='<span style="color:var(--dim)">'+t2('계산 실패','failed')+'</span>'; } }
+function dimCloud(on){ if(!ptGeo)return; const col=ptGeo.attributes.color.array; if(on){ for(let i=0;i<col.length;i+=3){ col[i]=.08;col[i+1]=.09;col[i+2]=.12; } ptGeo.attributes.color.needsUpdate=true; } }
+function clearEfield(){ [efE1,efE2,efPts].forEach(o=>{ if(o){ scene.remove(o); o.geometry.dispose(); o.material&&o.material.dispose(); } }); efE1=efE2=efPts=null; efData=null; rayHits=[]; if(pickMarker)pickMarker.visible=false; }
+function selectRayPoint(){ if(!rayHits.length||!efData)return; const i=rayHits[rayIdx].index,p=efData.pos[i];
+  if(!pickMarker){ pickMarker=new THREE.Mesh(new THREE.SphereGeometry(2.7,16,16),new THREE.MeshBasicMaterial({color:0xffe066})); scene.add(pickMarker); }
+  pickMarker.position.set(p[0]-centroid[0],p[1]-centroid[1],p[2]-centroid[2]); pickMarker.visible=true; pickPoint(i); }
+function stepDepth(d){ if(!rayHits.length)return; rayIdx=Math.max(0,Math.min(rayHits.length-1,rayIdx+d)); selectRayPoint(); }
+async function fetchEfield(){ if(!LAST)return; try{
+  const d=await (await fetch('/api/efield',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({montage:LAST.best,target:curTargetSpec()})})).json();
+  if(d.error){ console.warn(d.error); return; } buildEfield(d); }catch(e){ console.warn(e); } }
+function buildEfield(d){ clearEfield(); const N=d.pos.length,L=8.0,emax=d.emax||1;
+  const p1=new Float32Array(N*6),c1=new Float32Array(N*6),p2=new Float32Array(N*6),c2=new Float32Array(N*6),pp=new Float32Array(N*3);
+  for(let i=0;i<N;i++){ const b=[d.pos[i][0]-centroid[0],d.pos[i][1]-centroid[1],d.pos[i][2]-centroid[2]]; pp[i*3]=b[0];pp[i*3+1]=b[1];pp[i*3+2]=b[2];
+    const mk=(e,pa,ca,cb,ct)=>{ const m=Math.hypot(e[0],e[1],e[2])||1e-9,len=Math.min(m/emax,1)*L+0.6;
+      pa[i*6]=b[0];pa[i*6+1]=b[1];pa[i*6+2]=b[2]; pa[i*6+3]=b[0]+e[0]/m*len;pa[i*6+4]=b[1]+e[1]/m*len;pa[i*6+5]=b[2]+e[2]/m*len;
+      ca[i*6]=cb[0];ca[i*6+1]=cb[1];ca[i*6+2]=cb[2]; ca[i*6+3]=ct[0];ca[i*6+4]=ct[1];ca[i*6+5]=ct[2]; };
+    mk(d.e1[i],p1,c1,[.42,.11,.11],[1,.44,.42]); mk(d.e2[i],p2,c2,[.11,.2,.46],[.42,.66,1]); }
+  const mkLS=(p,c)=>{ const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.BufferAttribute(p,3)); g.setAttribute('color',new THREE.BufferAttribute(c,3));
+    return new THREE.LineSegments(g,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.92})); };
+  efE1=mkLS(p1,c1); efE2=mkLS(p2,c2); scene.add(efE1); scene.add(efE2);
+  const gp=new THREE.BufferGeometry(); gp.setAttribute('position',new THREE.BufferAttribute(pp,3));
+  efPts=new THREE.Points(gp,new THREE.PointsMaterial({size:4,transparent:true,opacity:0})); scene.add(efPts); efData=d; }
+async function pickPoint(i){ if(!efData||!LAST)return; try{
+  const pf=await (await fetch('/api/pointfield',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({montage:LAST.best,target:curTargetSpec(),vi:efData.idx[i]})})).json();
+  if(pf.error){ console.warn(pf.error); return; } showPointPanel(pf); }catch(e){ console.warn(e); } }
+let curPF=null;
+function showPointPanel(pf){ curPF=pf; document.getElementById('fpanel').style.display='block';
+  document.getElementById('fpTitle').textContent=(LANG==='ko'?'위치 분석':'Point')+`  [${pf.pos.join(', ')}]`;
+  let info=`<div class="prow"><span>|E₁| / |E₂|</span><b>${pf.e1n} / ${pf.e2n}</b></div>`+
+    `<div class="prow"><span>${LANG==='ko'?'Tmax(최적방향)':'Tmax(best)'}</span><b>${pf.tmax}</b> <span style="color:var(--dim)">[${pf.bestdir.map(x=>x.toFixed(2)).join(',')}]</span></div>`;
+  if(rayHits.length>1){ const ev=efData?efData.env[rayHits[rayIdx].index]:pf.tmax;
+    info+=`<div class="prow"><span>${LANG==='ko'?'깊이(광선)':'depth'} <button class="dbtn" onclick="stepDepth(-1)">◀${LANG==='ko'?'앞':''}</button> ${rayIdx+1}/${rayHits.length} <button class="dbtn" onclick="stepDepth(1)">${LANG==='ko'?'뒤':''}▶</button></span><b>env ${(+ev).toFixed(3)}</b></div>`; }
+  document.getElementById('fpInfo').innerHTML=info;
+  const fe1=pf.e1.map(Math.abs),fe2=pf.e2.map(Math.abs);
+  const fopt=pf.axenv.indexOf(Math.max(...pf.axenv)), aopt=(pf.afenv||[0,0,0]).indexOf(Math.max(...(pf.afenv||[0,0,0]))), axn='XYZ';
+  document.getElementById('fpDrive').innerHTML=
+    `<span style="color:#ffb48a">${LANG==='ko'?'필드 최적축':'field opt'} ${axn[fopt]}</span> · <span style="color:#8fe6c4">${LANG==='ko'?'AF 최적축':'AF opt'} ${axn[aopt]}</span>`+
+    (fopt!==aopt?` <b style="color:#ffd76a">← ${LANG==='ko'?'다름! 부위별 발화원인 상이':'differ!'}</b>`:` <span style="color:var(--dim)">(${LANG==='ko'?'일치':'same'})</span>`);
+  drawPointGraph(pf,fopt);
+  const fg=Math.max(...[0,1,2].map(j=>fe1[j]+fe2[j]),1e-6), ag=Math.max(...[0,1,2].map(j=>(pf.af1?pf.af1[j]+pf.af2[j]:0)),1e-9);
+  ['X','Y','Z'].forEach((ax,k)=>{ drawWave('fwave'+ax,fe1[k],fe2[k],pf.axenv[k],ax,k===fopt,fg);
+    if(pf.af1)drawWave('afwave'+ax,pf.af1[k],pf.af2[k],pf.afenv[k],ax,k===aopt,ag); }); }
+function drawWave(cvId,a1,a2,depth,axname,opt,gmax){ const cv=document.getElementById(cvId),g=cv.getContext('2d'),W=cv.width,H=cv.height,mid=H/2+4;
+  g.clearRect(0,0,W,H); const F1=+f1.value,F2=+f2.value,df=Math.abs(F1-F2)||100,Tspan=2/df,N=560,sc=(H/2-8)/(gmax||1e-6),tt=i=>i/(N-1)*Tspan,xt=i=>i/(N-1)*W;
+  g.strokeStyle='rgba(255,255,255,.08)'; g.beginPath(); g.moveTo(0,mid); g.lineTo(W,mid); g.stroke();
+  const plot=(fn,st,lw)=>{ g.strokeStyle=st; g.lineWidth=lw||1; g.beginPath(); for(let i=0;i<N;i++){ const y=mid-fn(tt(i))*sc; i?g.lineTo(xt(i),y):g.moveTo(xt(i),y); } g.stroke(); };
+  plot(t=>a1*Math.cos(2*Math.PI*F1*t),'rgba(232,86,79,.26)');
+  plot(t=>a2*Math.cos(2*Math.PI*F2*t),'rgba(91,155,255,.26)');
+  plot(t=>a1*Math.cos(2*Math.PI*F1*t)+a2*Math.cos(2*Math.PI*F2*t),'rgba(238,240,246,.86)',1.1);
+  const env=t=>Math.sqrt(a1*a1+a2*a2+2*a1*a2*Math.cos(2*Math.PI*df*t));
+  g.strokeStyle=opt?'#ffe066':'#45d39e'; g.lineWidth=1.6; [1,-1].forEach(s=>{ g.beginPath(); for(let i=0;i<N;i++){ const y=mid-s*env(tt(i))*sc; i?g.lineTo(xt(i),y):g.moveTo(xt(i),y); } g.stroke(); });
+  g.font='bold 10px ui-monospace'; g.fillStyle=opt?'#ffe066':'rgba(232,240,255,.8)';
+  g.fillText(axname+(opt?' ★':'')+`  ${LANG==='ko'?'깊이':'d'} ${(+depth).toFixed(3)}`,3,11); }
+function drawPointGraph(pf,opt){ const cv=document.getElementById('fgraph'),g=cv.getContext('2d'),W=cv.width,H=cv.height; g.clearRect(0,0,W,H); g.font='9px ui-monospace';
+  const e1=pf.e1.map(Math.abs),e2=pf.e2.map(Math.abs),env=pf.axenv,mx=Math.max(...e1,...e2,...env,pf.tmax||0,1e-6),base=H-14,top=17,gw=W/3,bw=10;
+  const ty=base-(pf.tmax/mx)*(base-top); g.strokeStyle='rgba(230,230,255,.28)'; g.setLineDash([3,3]); g.beginPath(); g.moveTo(0,ty); g.lineTo(W,ty); g.stroke(); g.setLineDash([]);
+  g.fillStyle='rgba(230,230,255,.5)'; g.fillText('Tmax '+pf.tmax,3,ty-3);
+  for(let a=0;a<3;a++){ const cx=a*gw+gw/2,isO=a===opt; const bar=(v,off,col)=>{ const hh=(v/mx)*(base-top); g.fillStyle=col; g.fillRect(cx+off,base-hh,bw,hh); };
+    bar(e1[a],-bw*1.6,'#e8564f'); bar(e2[a],-bw*0.5,'#5b9bff'); bar(env[a],bw*0.6,isO?'#ffe066':'#45d39e');
+    g.fillStyle=isO?'#ffe066':'rgba(230,230,255,.65)'; g.textAlign='center'; g.fillText((isO?'★':'')+'XYZ'[a],cx,H-2); g.textAlign='left'; }
+  g.fillStyle='#e8564f'; g.fillText('|E1|',3,11); g.fillStyle='#5b9bff'; g.fillText('|E2|',34,11); g.fillStyle='#45d39e'; g.fillText('env',66,11); }
+function toggle(nm){ SEL.has(nm)?SEL.delete(nm):SEL.add(nm); refreshSel(); }
+function selectAll(on){ if(RESULT)clearResultView(); SEL=new Set(on?INIT.electrodes.map(e=>e.name):[]); refreshSel(); }
+function setTgtCloud(pts){ if(!tgtGeo)return; const p=new Float32Array(Math.max(pts.length,1)*3);
+  for(let k=0;k<pts.length;k++){ p[k*3]=pts[k][0]-centroid[0]; p[k*3+1]=pts[k][1]-centroid[1]; p[k*3+2]=pts[k][2]-centroid[2]; }
+  tgtGeo.setAttribute('position',new THREE.BufferAttribute(p,3)); tgtGeo.setDrawRange(0,pts.length); tgtGeo.computeBoundingSphere(); }
+async function fetchTgtVox(){ try{ const d=await (await fetch('/api/tgtvox',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(curTargetSpec())})).json(); if(d.pts)setTgtCloud(d.pts); }catch(e){} }
+let _tgtTimer; function updateMarker(){ if(!tgtGeo||!INIT)return; clearTimeout(_tgtTimer); _tgtTimer=setTimeout(fetchTgtVox,200); }  // 표적 외곽 contour (서버, 디바운스)
+function refreshSel(){ document.getElementById('cnt').textContent=SEL.size;
+  for(const nm in elMeshes){ const sel=SEL.has(nm); elMeshes[nm].material.color.setHex(sel?0x7b8cff:0x39424f); elMeshes[nm].scale.setScalar(sel?1.2:1); elLabels[nm].visible=true; elLabels[nm].element.style.color=sel?'#c9d0ff':'#79818f'; }
+  document.getElementById('vhud').innerHTML=`<b>3D</b> · ${t('elecHint')}`; }
+function clearResultView(){ RESULT=false; document.getElementById('cbar').style.display='none'; cbarHi.style.display='none'; cbarLo.style.display='none';
+  clearEfield(); FMODE='intensity'; document.getElementById('fmInt').classList.add('on');
+  ['fmAf','fmEf'].forEach(id=>{ const b=document.getElementById(id); b.classList.remove('on'); b.disabled=true; });
+  document.getElementById('cbar').style.background='';
+  document.getElementById('eflegend').style.display='none'; document.getElementById('fpanel').style.display='none';
+  const col=ptGeo.attributes.color.array; for(let i=0;i<col.length;i+=3){ col[i]=.15;col[i+1]=.17;col[i+2]=.22; } ptGeo.attributes.color.needsUpdate=true; refreshSel(); }
+
+function getPresets(){ try{ return JSON.parse(localStorage.getItem('ti_presets')||'{}'); }catch{ return {}; } }
+function loadPresets(){ const box=document.getElementById('presets'),P=getPresets(); box.innerHTML=''; const keys=Object.keys(P); document.getElementById('presethint').style.display=keys.length?'none':'block';
+  keys.forEach(k=>{ const c=document.createElement('div'); c.className='pchip'; c.innerHTML=`<span class="load">${k}</span> <button>✕</button>`;
+    c.querySelector('.load').onclick=()=>{ if(RESULT)clearResultView(); SEL=new Set(P[k]); refreshSel(); }; c.querySelector('button').onclick=()=>{ const q=getPresets(); delete q[k]; localStorage.setItem('ti_presets',JSON.stringify(q)); loadPresets(); }; box.appendChild(c); }); }
+function savePreset(){ if(SEL.size<1)return; const name=prompt('Preset name:',`Set ${Object.keys(getPresets()).length+1}`); if(!name)return; const P=getPresets(); P[name]=[...SEL]; localStorage.setItem('ti_presets',JSON.stringify(P)); loadPresets(); }
+
+function resetAll(){ SEL.clear(); PARETO=[]; LAST=null; setMode('classic'); document.getElementById('target').selectedIndex=0; onTargetChange();
+  w1.value=w2.value=w3.value=0.5; onWeight(); document.getElementById('kval').value=8; document.getElementById('savebtn').style.display='none';
+  ['detail','histbox','topbox'].forEach(id=>document.getElementById(id).style.display='none');
+  ['m1','m2','m3','m4'].forEach(id=>document.getElementById(id).textContent='—'); document.getElementById('toplist').innerHTML=''; document.getElementById('agrid').innerHTML='';
+  document.getElementById('montage').outerHTML='<div id="montage" class="empty" data-i18n="emptyState">'+t('emptyState')+'</div>'; clearResultView(); s4lClear(); }
+
+function onWeight(){ w1o.value=(+w1.value).toFixed(2); w2o.value=(+w2.value).toFixed(2); w3o.value=(+w3.value).toFixed(2);
+  if(RESULT && PARETO.length){ renderTop(); loadMontage(rankPareto()[0]); } }
+// 전극 조합 키 (극성·채널 스왑 불변): 각 쌍 내부 정렬 후 두 쌍 정렬 → 전류비만 다른 건 동일 키
+function comboKey(p){ const pr=a=>[...a].sort().join('|'); return [pr(p.ch1),pr(p.ch2)].sort().join('¦'); }
+function rankPareto(){ const w=W(),mx1=Math.max(...PARETO.map(p=>p.M1))||1,mx2=Math.max(...PARETO.map(p=>p.M2))||1,mx3=Math.max(...PARETO.map(p=>p.M3))||1;
+  const sorted=PARETO.map(p=>({...p,WP:w[0]*p.M1/mx1+w[1]*p.M2/mx2-w[2]*p.M3/mx3})).sort((a,b)=>b.WP-a.WP);
+  // 조합당 최고 WP 하나만 (전류비만 다른 중복 제거) → 상위 목록이 서로 다른 전극 조합
+  const seen=new Set(),out=[]; for(const p of sorted){ const k=comboKey(p); if(seen.has(k))continue; seen.add(k); out.push(p); } return out; }
+function renderTop(){ const R=rankPareto().slice(0,5),box=document.getElementById('toplist'); box.innerHTML='';
+  R.forEach((m,i)=>{ const d=document.createElement('div'); d.className='topitem'+(i===0?' active':'');
+    d.innerHTML=`<span class="rk">#${i+1}</span><span class="mg">${m.ch1[0]}/${m.ch1[1]} × ${m.ch2[0]}/${m.ch2[1]} @${m.ratio}</span><span class="sc">M2 ${m.M2.toFixed(2)}·M3 ${m.M3.toFixed(1)}%</span>`;
+    d.onclick=()=>{ document.querySelectorAll('.topitem').forEach(x=>x.classList.remove('active')); d.classList.add('active'); loadMontage(m); }; box.appendChild(d); });
+  document.getElementById('topbox').style.display=R.length?'block':'none'; }
+
+async function compute(){ const need=MODE==='dual'?8:4; if(SEL.size<need){ alert(MODE==='dual'?'4채널 이중 TI는 전극 8개 이상 선택하세요.':t('needElec')); return; } const req={target:curTargetSpec(),allowed:[...SEL],mode:MODE,weights:W(),pctl:50,k:MODE==='gevd'?+document.getElementById('kval').value:null,f1:+f1.value,f2:+f2.value}; if(MODE==='dual')req.freqs=[+df1.value,+df2.value,+df3.value,+df4.value]; if(MODE==='gevd')req.pmax_rel=+document.getElementById('pmaxval').value; if(MODE==='timemux'){req.k_slots=+document.getElementById('kslots').value;req.max_elec=+document.getElementById('maxelec').value;req.m1_floor=+document.getElementById('m1floor').value;}
+  s4lClear();   // 새 몽타주를 계산하면 옛 Sim4Life 결과는 더 이상 이 화면의 것이 아니다
+  const run=document.getElementById('run'); run.disabled=true; run.textContent='…'; document.getElementById('prog').classList.add('on'); setProg(0.02,'');
+  try{ const {job}=await (await fetch('/api/optimize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(req)})).json(); const t0=performance.now();
+    while(true){ await new Promise(r=>setTimeout(r,250)); const s=await (await fetch('/api/progress?job='+job)).json();
+      if(s.error)throw new Error(s.error); setProg(s.pct||0,s.stage||'');
+      if(s.done){ if(s.result)onResult(s.result,((performance.now()-t0)/1000).toFixed(1)); else throw new Error('no result'); break; } }
+  }catch(e){ document.getElementById('montage').innerHTML=`<div class="err">${e.message}</div>`; }
+  finally{ run.disabled=false; run.textContent=t('run'); setTimeout(()=>document.getElementById('prog').classList.remove('on'),500); } }
+// ── Sim4Life 백엔드 잡 ── 최적화(초 단위)와 달리 분 단위라 별도 진행표시를 쓴다.
+// 전극 온디맨드 솔브는 UI 에서 뺐다(리드필드 84전극이 이미 다 풀려 있다).
+// 서버 엔드포인트 `/api/electrode/solve` 는 남아 있으니 필요하면 직접 부르면 된다.
+let S4LJOB=null, S4LRES=null;     // S4LRES = 마지막 분석 결과 (결과 저장 CSV 에 실린다)
+function s4lSet(k,v){ const e=document.getElementById(k); if(e) e.textContent=v; }
+// Sim4Life 결과 패널·진행표시를 지운다. 초기화·새 계산 때 반드시 부를 것 —
+// 안 지우면 **옛 몽타주의 결과가 새 화면에 남아** 어느 몽타주 값인지 헷갈린다.
+function s4lClear(){
+  // ⚠ 잡이 돌고 있으면 S4LJOB 을 지우지 않는다 — 지우면 폴링만 끊기고 잡은 서버에서
+  //   계속 돌아 **고아**가 된다. 화면만 비우고 끝나면 다시 그린다.
+  if(!S4LJOB) document.getElementById('s4lprog').style.display='none';
+  document.getElementById('s4lbox').style.display='none';
+  ['s4lgrid','s4ltbl','s4limgs','s4ltgt'].forEach(id=>{const e=document.getElementById(id); if(e)e.innerHTML='';});
+  document.getElementById('s4lsub').textContent='';
+  S4LRES=null;
+  if(!S4LJOB){ s4lSet('s4lstat',t2('대기','idle')); s4lSet('s4llog',''); s4lSet('s4lstage','—');
+               s4lSet('s4lpct','0%'); document.getElementById('s4lfill').style.width='0%'; }
+}
+async function s4lPoll(){
+  while(S4LJOB){
+    await new Promise(r=>setTimeout(r,1000));
+    let s; try{ s=await (await fetch('/api/progress?job='+S4LJOB)).json(); }catch(e){ continue; }
+    const p=(s.pct||0)*100;
+    document.getElementById('s4lfill').style.width=p.toFixed(0)+'%';
+    s4lSet('s4lpct',p.toFixed(0)+'%'); s4lSet('s4lstage',s.stage||'—');
+    if(s.log&&s.log.length) s4lSet('s4llog',s.log.slice(-8).join('\n'));
+    if(s.done){
+      s4lSet('s4lstat', s.cancelled?t2('취소됨','cancelled') : (s.error?t2('실패','failed'):t2('완료','done')));
+      if(s.error) s4lSet('s4llog',(s.log||[]).slice(-6).join('\n')+'\n'+s.error);
+      const job=S4LJOB; S4LJOB=null;
+      document.getElementById('s4lcancel').style.display='none';
+      if(s.cancelled){ document.getElementById('s4lprog').style.display='none'; }
+      else if(!s.error && s.kind==='montage') renderS4L(s.result,job);
+      break;
+    }
+    s4lSet('s4lstat',t2('진행중','running'));
+    document.getElementById('s4lcancel').style.display='block';
+  }
+}
+async function s4lCancel(){
+  if(!S4LJOB) return;
+  if(!confirm(t2('돌고 있는 Sim4Life 작업을 중단합니다.\n지금까지 푼 것은 버려집니다 (캐시에 저장되지 않습니다).\n\n중단할까요?',
+                 'Stop the running Sim4Life job.\nWork done so far is discarded (nothing is written to the cache).\n\nProceed?'))) return;
+  const btn=document.getElementById('s4lcancel'); btn.disabled=true; btn.textContent=t2('중단 중…','stopping…');
+  s4lSet('s4lstage',t2('취소 요청 — 프로세스 정리 중','cancel requested — cleaning up'));
+  try{ const r=await (await fetch('/api/job/cancel',{method:'POST',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({job:S4LJOB})})).json();
+       if(r.error) s4lSet('s4llog',r.error); }
+  catch(e){ s4lSet('s4llog',String(e)); }
+  // 폴링이 done 을 보고 마무리한다 — 여기서 S4LJOB 을 지우면 고아가 된다
+  btn.disabled=false; btn.textContent=t2('■ 취소','■ Cancel');
+}
+// ── 몽타주를 Sim4Life 로 ── 뇌 안의 E 는 중첩으로 이미 정확하다(재솔브와 상관 0.99997).
+//   값어치는 **머리 전체**에 있다 — 두피 전류밀도 같은 안전 지표는 여기서만 나온다.
+async function s4lSendMontage(){
+  if(!LAST||!LAST.best){ alert(t2('먼저 계산을 눌러 몽타주를 만드세요.','Run Compute first to produce a montage.')); return; }
+  const b=LAST.best;
+  if(!b.ch1||!b.ch2||b.ch1.length!==2||b.ch2.length!==2){
+    alert(t2('2쌍 몽타주(classic·NSGA)만 보낼 수 있습니다. 분산·이중TI·시분할은 채널 구조가 달라 지원하지 않습니다.',
+             'Only two-pair montages (classic / NSGA) can be sent. Distributed, dual-TI and time-mux have a different channel structure.')); return; }
+  const nm=`${b.ch1[0]}/${b.ch1[1]} × ${b.ch2[0]}/${b.ch2[1]} @${b.ratio}`;
+  if(!confirm(nm+t2('\n\nSim4Life 로 보내 머리 전체를 풉니다.\n약 7분 — 전에 같은 분석을 했다면 즉시 꺼내옵니다.\n\n진행할까요?',
+                     '\n\nSend to Sim4Life and solve the whole head.\n~7 min — instant if this exact analysis was run before.\n\nProceed?'))) return;
+  document.getElementById('s4lprog').style.display='block';
+  s4lSet('s4lstat',t2('요청','requested')); s4lSet('s4llog',''); document.getElementById('s4lbox').style.display='none';
+  let r;
+  try{ r=await (await fetch('/api/montage/send',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ch1:b.ch1,ch2:b.ch2,ratio:b.ratio||1.0,target:curTargetSpec()})})).json(); }
+  catch(e){ s4lSet('s4lstat',t2('오류','error')); s4lSet('s4llog',String(e)); return; }
+  if(r.error){ s4lSet('s4lstat',t2('거부','rejected')); s4lSet('s4llog',r.error); return; }
+  S4LJOB=r.job; s4lPoll();
+}
+function renderS4L(res,job){
+  if(!res) return;
+  S4LRES={res:res,job:job};                       // used by the CSV export
+  const box=document.getElementById('s4lbox'); box.style.display='block';
+  const m=res.montage||{},c=res.currents_mA||{},sf=res.safety||{},R=res.head_resistance_ohm||{};
+  const f=(x,n)=>(+x||0).toFixed(n);
+  // Always show whether this came from the cache — "which run is this number from?"
+  // has been a recurring trap in this project.
+  document.getElementById('s4lsub').innerHTML=
+    `<b style="color:var(--text)">${m.ch1?m.ch1.join('/'):'?'} × ${m.ch2?m.ch2.join('/'):'?'}</b> · `+
+    `${f(c.ch1,3)}/${f(c.ch2,3)} mA · ${t2('격자','grid')} ${(res.grid||[]).join('×')}`+
+    (res.cache_key?` · <span style="opacity:.5">key ${res.cache_key}</span>`:'')+
+    (res.cached?` · <b style="color:var(--mint)">${t2('캐시 적중','cache hit')}</b> <span style="opacity:.6">(${res.cached_from||'?'})</span>`:'');
+
+  const T=res.target, H=[];
+  const head=(a,b)=>`<div class="s4lh">${a}<small>${b}</small></div>`;
+  // ── 1. metrics — largest ─────────────────────────────────────────
+  if(T&&!T.error){
+    const cmp=T.compare||{}, S=T.metrics_s4l;
+    const DEF={M1:[t2('M1 세기','M1 strength'),t2('표적 엔벨로프 중앙값 (V/m)','median target envelope (V/m)'),4],
+               M2:[t2('M2 초점','M2 focality'),t2('표적/비표적 세기비 (RMS²)','target/off strength ratio (RMS²)'),3],
+               M3:[t2('M3 누출','M3 leakage'),t2('표적보다 센 비표적 부피 (%)','off volume above target median (%)'),2]};
+    H.push(head(t2('지표','Metrics'),
+      `${T.name} · ${t2('표적','target')} ${T.n_target.toLocaleString()} ${t2('복셀','vox')} · ${t2('비표적','off')} ${T.n_off.toLocaleString()} (${T.off_def})`));
+    H.push('<div class="s4lcmp">'+['M1','M2','M3'].map(k=>{
+      const [nm,desc,dg]=DEF[k], v=cmp[k];
+      const rr=v?v.ratio:null, off=rr!==null?Math.abs(rr-1):0;
+      const col=rr===null?'var(--dim)':(off<0.05?'var(--mint)':(off<0.15?'var(--gold)':'var(--anode)'));
+      return `<div class="s4lc"><div class="n">${nm}</div>`+
+        `<div class="big">${f(S[k],dg)}${k==='M3'?'<span style="font-size:15px">%</span>':''}</div>`+
+        `<div class="sub">${desc}</div>`+
+        (v?`<div class="rr" style="color:${col}">${t2('리드필드','leadfield')} ${f(v.leadfield,dg)} → ×${f(rr,3)}</div>`:'')+
+        `</div>`; }).join('')+'</div>');
+    H.push(`<div class="hint" style="margin-top:7px">${t2(
+      '위 숫자는 <b>Sim4Life 해</b>에서 계산했습니다. 아래 줄은 리드필드 중첩값과의 비 — 같은 모델이라 1에 가까워야 정상입니다.',
+      'Computed from the <b>Sim4Life</b> solution. The bottom line is the ratio to leadfield superposition — same model, so it should sit near 1.')}</div>`);
+
+    // ── 2. where the stimulation lands — bars ──────────────────────
+    const mx=Math.max(...T.regions.map(x=>x.over_thr_pct),1);
+    H.push(head(t2('자극 부위','Stimulated regions'),
+      t2(`임계 ${f(T.threshold.value,4)} V/m (표적 엔벨로프 중앙값) 를 넘는 부피 비율`,
+         `volume fraction above ${f(T.threshold.value,4)} V/m (median target envelope)`)));
+    H.push('<div class="s4lreg">'+T.regions.map(x=>{
+      const p=x.over_thr_pct, col=p>=50?'var(--anode)':(p>=10?'var(--gold)':(p>=1?'var(--accent)':'var(--faint)'));
+      const tgt=x.in_target>0?` <span style="color:var(--mint);font-size:11px">${t2('표적','target')}</span>`:'';
+      return `<div class="s4lrow"><div class="nm">${t2(x.region_ko||x.region, x.region)}${tgt}</div>`+
+        `<div class="s4ltrk"><div class="s4lfil" style="width:${(p/mx*100).toFixed(1)}%;background:${col}"></div></div>`+
+        `<div class="pc" style="color:${col}">${f(p,2)}%<small>${x.over_thr_voxels.toLocaleString()} / ${x.voxels.toLocaleString()}</small></div></div>`;
+    }).join('')+'</div>');
+    H.push(`<div class="hint" style="margin-top:7px">${t2(
+      'M3 는 <b>얼마나</b> 새는지만 말합니다. 이 막대는 같은 기준으로 <b>어디로</b> 새는지를 쪼갠 것입니다.',
+      'M3 only says <b>how much</b> leaks. These bars split the same criterion by <b>where</b> it leaks.')}</div>`);
+    H.push(`<div class="hint" style="margin-top:5px">${t2('표적 엔벨로프 중앙','target envelope median')} <b>${f(T.env.median,4)}</b> · `+
+      `p90 ${f(T.env.p90,4)} · ${t2('최대','max')} ${f(T.env.max,4)} · ${t2('비표적 최대','off max')} ${f(T.off_max,4)} V/m</div>`);
+  } else if(T&&T.error){
+    H.push(`<div class="hint" style="margin-top:10px">${t2('표적 지표 없음','no target metrics')} — ${T.error}</div>`);
+  } else {
+    H.push(`<div class="hint" style="margin-top:10px">${t2(
+      '표적을 고르고 계산한 뒤 보내면 M1·M2·M3 와 구조별 자극 분포가 함께 나옵니다.',
+      'Pick a target, run Compute, then send — you also get M1·M2·M3 and the per-structure distribution.')}</div>`);
+  }
+
+  // ── 3. safety · circuit — only visible outside the brain ─────────
+  H.push(head(t2('안전 · 회로','Safety · circuit'),
+               t2('뇌 밖은 Sim4Life 에서만 보입니다','outside the brain is Sim4Life-only')));
+  const st=(k,v,u)=>`<div class="stat"><div class="sk">${k}</div><div class="sv">${v}${u?` <small>${u}</small>`:''}</div></div>`;
+  H.push('<div class="s4lsaf">'+
+    st(t2('피부 전류밀도 최대','skin J max'),f(sf.skin_J_max_A_per_m2,2),'A/m²')+
+    st(t2('피부 E 최대','skin E max'),f(sf.skin_E_max_V_per_m,1),'V/m')+
+    st(t2('머리 저항 ch1','head resistance ch1'),f(R.ch1,0),'Ω')+
+    st(t2('머리 저항 ch2','head resistance ch2'),f(R.ch2,0),'Ω')+'</div>');
+
+  // ── 4. slices — matched by height because aspect ratios differ ───
+  H.push(head(t2('단면','Slices'), t2('머리 전체 · TI 엔벨로프','whole head · TI envelope')));
+  H.push('<div style="display:flex;gap:8px;align-items:flex-start;overflow-x:auto;padding-bottom:4px">'+
+    (res.slices||[]).map(s=>
+    `<a href="/api/montage/file?job=${job}&f=${s.file}" target="_blank" style="flex:0 0 auto">`+
+    `<img src="/api/montage/file?job=${job}&f=${s.file}" style="height:500px;width:auto;display:block;border-radius:8px;background:#0d1014"></a>`).join('')+'</div>');
+
+  // ── 5. per-tissue — secondary, folded away ───────────────────────
+  H.push('<details class="s4ld" style="margin-top:14px"><summary>'+
+    t2(`조직별 상세 (${(res.tissues||[]).length}종) — 두피·두개골·CSF·안구 포함`,
+       `Per-tissue detail (${(res.tissues||[]).length}) — incl. scalp, skull, CSF, eye`)+'</summary>'+
+    '<table class="s4lt"><thead><tr>'+
+    [t2('조직','Tissue'),t2('셀 수','Cells'),t2('엔벨로프 중앙','Env median'),'p95',t2('최대','Max'),'J max (A/m²)']
+      .map(h=>`<th>${h}</th>`).join('')+
+    '</tr></thead><tbody>'+(res.tissues||[]).map(x=>
+      `<tr><td>${t2(x.tissue_ko||x.tissue, x.tissue)}</td><td>${x.cells.toLocaleString()}</td><td>${f(x.env_median,4)}</td>`+
+      `<td>${f(x.env_p95,4)}</td><td>${f(x.env_max,3)}</td><td>${f(x.J_max,3)}</td></tr>`).join('')+
+    '</tbody></table></details>');
+
+  document.getElementById('s4ltgt').innerHTML=H.join('');
+  box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function setProg(p,st){ document.getElementById('pfill').style.width=(p*100).toFixed(0)+'%'; document.getElementById('ppct').textContent=(p*100).toFixed(0)+'%';
+  const k='st_'+String(st).replace(/[ -]/g,''),v=t(k); document.getElementById('pstage').textContent=(v===k?st:v); }
+
+async function loadMontage(m){ const r=await (await fetch('/api/field',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({montage:m,target:curTargetSpec(),f1:+f1.value,f2:+f2.value})})).json();
+  if(r.error)return; renderCore(r); if(FMODE!=='intensity')setFMode(FMODE); }
+function onResult(r,secs){ RESULT=true; r._secs=secs; r._method=r.method; r._np=r.n_pareto; r._ne=r.n_eval; r._hv=r.hypervolume; PARETO=r.pareto||[]; renderCore(r);
+  document.getElementById('fmEf').disabled=false; document.getElementById('fmAf').disabled=false; if(FMODE!=='intensity')setFMode(FMODE);
+  if(FMODE!=='efield')document.getElementById('resolp').style.display='block';   // 계산 완료 즉시 활성임계 패널
+  document.getElementById('savebtn').style.display='inline-block';
+  if(PARETO.length) renderTop();
+  else document.getElementById('topbox').style.display='none'; }
+
+function renderCore(r,relang){ LAST=r; const b=r.best,dist=(('currents'in b)||b.timemux),f=r.field;
+  const tm=f.tmax,mx=f.tmax_max||Math.max(...tm),col=ptGeo.attributes.color.array;
+  // 표적 포함 모든 복셀을 세기(inferno)로 — 표적 위치는 초록 점구름(tgtCloud)이 오버레이로 표시
+  for(let i=0;i<tm.length;i++){ const c=inferno(tm[i]/mx); col[i*3]=c[0];col[i*3+1]=c[1];col[i*3+2]=c[2]; }
+  ptGeo.attributes.color.needsUpdate=true; const _cb=document.getElementById('cbar'); _cb.style.display='block'; _cb.style.background=''; cbarHi.style.display='block'; cbarLo.style.display='block';
+  setDrive(f.tmax,f.target); if(FMODE==='intensity')resolCompute();
+  document.getElementById('vhud').innerHTML='<b>'+(LANG==='ko'?'필드':'Field')+'</b> · '+(LANG==='ko'?'초록=표적 · 밝을수록 강함':'green=target · brighter=stronger');
+  // 전극: 채널 색 (0/1=빨강/주황=시스템A 또는 f₁/f₂, 2/3=파랑/청록=시스템B) · 극성은 크기·프로토콜 부호
+  const CHC=[0xff6b6b,0xffa94d,0x5b9bff,0x4fe3bf], CHL=['#ff9a9a','#ffc98a','#9dc2ff','#a7f0dd'];
+  for(const nm in elMeshes){ const m=elMeshes[nm],u=r.used[nm];
+    if(u){ const ci=u.ch||0; m.material.color.setHex(CHC[ci]||0xff6b6b); m.scale.setScalar(1+Math.min(Math.abs(u.I),2)/2*.9); elLabels[nm].visible=true; elLabels[nm].element.style.color=CHL[ci]||'#ff9a9a'; }
+    else{ m.material.color.setHex(0x2a3038); m.scale.setScalar(.7); elLabels[nm].visible=false; } }
+  m1.textContent=(dist?b.M1_dir:b.M1).toFixed(3); m2.textContent=(dist?b.M2_dir:b.M2).toFixed(2); m3.textContent=(dist?b.M3_dir:b.M3).toFixed(1);
+  if(b.timemux){ m4k.textContent=LANG==='ko'?'초점이득':'focality gain'; m4.textContent='×'+(+b.focality_gain).toFixed(2); document.getElementById('m4u').textContent=LANG==='ko'?'단일 2쌍 대비(등강도)':'vs best single (matched)'; }
+  else if(b.huang){ m4k.textContent=LANG==='ko'?'표적변조':'target mod'; m4.textContent=(+b.M1_dir).toFixed(3); document.getElementById('m4u').textContent='Pmax '+(+b.pmax_rel).toFixed(2); }
+  else if(dist){ const g=(b.focality_bound>0?b.M2_dir/b.focality_bound:0); m4k.textContent=LANG==='ko'?'간섭이득':'gain'; m4.textContent='×'+g.toFixed(1); document.getElementById('m4u').textContent=LANG==='ko'?'단일필드 대비':'vs single-field'; }
+  else if(b.dual){ m4k.textContent=LANG==='ko'?'세기 이득':'gain'; m4.textContent='×'+(+(r.strength_gain||1)).toFixed(2); document.getElementById('m4u').textContent=LANG==='ko'?'단일 TI 대비':'vs single TI'; }
+  else{ m4k.textContent='WP'; m4.textContent=(+(b.WP!=null?b.WP:0)).toFixed(3); document.getElementById('m4u').textContent=t('wpu'); }
+  const ti=r.target_info,st=r.strength,fo=r.focus,sf=r.safety, stat=(k,v,u='')=>`<div class="stat"><div class="sk">${k}</div><div class="sv">${v}${u?` <small>${u}</small>`:''}</div></div>`;
+  document.getElementById('agrid').innerHTML=stat(t('sVol'),ti.n_vox,t('vox'))+stat(t('sDepth'),ti.depth_mm,'mm')+stat(t('sCenter'),`[${ti.center.join(', ')}]`)
+    +stat(t('sMed'),st.median,'V/m')+stat(t('sRange'),`${st.p10}–${st.p90}`)+stat(t('sMax'),st.max,'V/m')
+    +`<div class="stat"><div class="sk">${t('sPeak')}</div><div class="sv"><span class="badge ${fo.peak_in_target?'ok':'no'}">${fo.peak_in_target?t('sIn'):t('sOut')}</span> <small>${fo.peak_dist_mm}mm</small></div></div>`
+    +stat(t('sOff'),fo.off_max,'V/m')+stat(t('sHfT'),sf.hf_peak_target,'V/m')+stat(t('sHfO'),sf.hf_peak_off,'V/m');
+  document.getElementById('detail').style.display='block'; document.getElementById('histbox').style.display='block'; drawHist(r.hist);
+  const fq=r.freq_check;
+  if(fq&&fq.level!=='ok'){ const err=fq.level==='error';
+    document.getElementById('freqwarn').innerHTML=
+      `<div style="background:${err?'#2a1214':'#241d10'};border:1px solid ${err?'#7a2a30':'#5a4620'};border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.6;color:${err?'#ffb3b8':'#ffcf8a'}">
+         <b>${err?'⚠ 주파수 설정 오류':'주의'}</b> · Δf = ${(fq.df||[]).join(', ')} Hz<br>${fq.msg}</div>`;
+    document.getElementById('freqwarn').style.display='block';
+  } else document.getElementById('freqwarn').style.display='none';
+  let html=`<div style="color:var(--dim);font-family:var(--mono);font-size:11.5px;margin-bottom:9px">${mlabel(r._method)||r.mode||''}${r._secs?` · ${r._secs}${t('secs')}`:''}${r._np?` · pareto ${r._np}`:''}${r._hv?` · HV ${r._hv}`:''}</div>`;
+  if(r.M2_af!==undefined){ const wM2=Math.min(r.M2_field,r.M2_af),wM3=Math.max(r.M3_field,r.M3_af);
+    html+=`<div style="font-family:var(--mono);font-size:10.5px;background:#241d10;border:1px solid #5a4620;border-radius:6px;padding:7px 10px;margin-bottom:9px;color:#ffcf8a;line-height:1.7">
+      <b>β ${LANG==='ko'?'이중기전 선택성 (방향최악)':'Dual-mechanism selectivity (worst-orient.)'}</b><br>
+      ${LANG==='ko'?'필드':'Field'} M2 <b>${r.M2_field}</b> · AF M2 <b>${r.M2_af}</b> → ${LANG==='ko'?'최악':'worst'} <b style="color:${wM2>=1?'#7fe0a0':'#ff9a9a'}">${wM2.toFixed(2)}</b> ${wM2<1?(LANG==='ko'?'(off≥표적, 미선택)':'(off≥target, non-selective)'):''}<br>
+      ${LANG==='ko'?'누출':'Leak'} M3 field <b>${r.M3_field}%</b> · AF <b>${r.M3_af}%</b> → ${LANG==='ko'?'최악':'worst'} <b style="color:${wM3<=25?'#7fe0a0':'#ff9a9a'}">${wM3.toFixed(0)}%</b></div>`; }
+  html+=`<div class="proto">`;
+  const PCOL=['#ff8a8a','#ffb066','#7db0ff','#5fe3c0'];
+  if(r.protocol.timemux){   // 시분할: 타임라인 + 슬롯별 조합
+    const S=b.slots||[], SC=['#ff8a8a','#ffb066','#7db0ff','#5fe3c0','#c9a0ff','#ffd76a'];
+    const byslot={}; r.protocol.channels.forEach(ch=>{ (byslot[ch.slot]=byslot[ch.slot]||[]).push(ch); });
+    const cnt={}; S.forEach(s=>[...s.ch1,...s.ch2].forEach(e=>cnt[e]=(cnt[e]||0)+1));
+    const reused=Object.entries(cnt).filter(([e,c])=>c>1).sort((a,b)=>b[1]-a[1]).map(([e,c])=>`${e}×${c}`);
+    html+=`<div style="margin:0 0 12px"><div style="display:flex;height:26px;border-radius:6px;overflow:hidden;border:1px solid var(--border)">`;
+    S.forEach((s,i)=>{ html+=`<div title="슬롯 ${i+1}" style="width:${(s.duty*100).toFixed(1)}%;background:${SC[i%6]};display:grid;place-items:center;font:700 10px var(--mono);color:#0b0e13">${(s.duty*100).toFixed(0)}%</div>`; });
+    html+=`</div><div class="hint" style="margin-top:5px">${LANG==='ko'?'시간축 — 슬롯을 duty 비율로 순차 인가 (고속 스위칭 → 뉴런은 시간평균을 인지)':'time axis — slots applied sequentially by duty (fast switching → the neuron perceives the time average)'}</div>`;
+    html+=`<div class="hint">${LANG==='ko'?'전극':'electrodes'} ${b.n_electrodes}${LANG==='ko'?'개 사용':' used'}${reused.length?` · ${LANG==='ko'?'재사용':'reused'} ${reused.join(' ')}`:''}</div></div>`;
+    S.forEach((s,i)=>{ const col=SC[i%6], chs=byslot[i+1]||[];
+      html+=`<div style="border-left:3px solid ${col};padding-left:10px;margin-bottom:9px">
+        <div style="font:600 11px var(--mono);color:${col};letter-spacing:.03em">${LANG==='ko'?'슬롯':'SLOT'} ${i+1} · duty ${(s.duty*100).toFixed(0)}% · ${LANG==='ko'?'전류비':'ratio'} ${(+s.ratio).toFixed(2)}</div>`;
+      chs.forEach((ch,k)=>{ const cu=Object.entries(ch.currents_mA).map(([e,I])=>`<b style="color:var(--text)">${e}</b> ${I>=0?'+':''}${I}`).join('&nbsp; ');
+        html+=`<div style="font:11.5px var(--mono);color:var(--dim);margin-top:2px">CH${k+1}·${ch.freq_Hz}Hz&nbsp; ${cu}</div>`; });
+      html+=`</div>`; });
+  } else
+  r.protocol.channels.forEach((ch,i)=>{ const col=PCOL[i]||'#ff8a8a'; const cur=Object.entries(ch.currents_mA).map(([e,I])=>`<span style="color:${col}">${e} ${I>=0?'+':''}${I}</span>`).join('  ');
+    html+=`<div><span class="chl">CH${i+1}·${ch.freq_Hz}Hz</span>  ${cur}</div>`; });
+  document.getElementById('montage').innerHTML=html+'</div>'; document.getElementById('savebtn').style.display=RESULT?'inline-block':'none'; }
+
+function drawHist(h){ const cv=document.getElementById('hist'),W2=cv.width=cv.clientWidth,H=cv.height,ctx=cv.getContext('2d'); ctx.clearRect(0,0,W2,H); const pad=34,PW=W2-pad-10,PH=H-26,L=h.levels,mx=L[L.length-1]||1;
+  const sx=v=>pad+v/mx*PW,sy=v=>8+(1-v)*PH; ctx.strokeStyle='#262c38'; ctx.beginPath(); ctx.moveTo(pad,8); ctx.lineTo(pad,8+PH); ctx.lineTo(pad+PW,8+PH); ctx.stroke();
+  const line=(a,c)=>{ ctx.strokeStyle=c; ctx.lineWidth=2; ctx.beginPath(); L.forEach((l,i)=>{ const x=sx(l),y=sy(a[i]); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke(); }; line(h.off,'#ff6b6b'); line(h.target,'#4fe3bf');
+  ctx.fillStyle='#8890a1'; ctx.font='10px ui-monospace'; ctx.fillText('Tmax →',pad+PW-46,H-4); ctx.fillStyle='#4fe3bf'; ctx.fillText(LANG==='ko'?'표적':'target',pad+4,16); ctx.fillStyle='#ff6b6b'; ctx.fillText(LANG==='ko'?'비표적':'off',pad+44,16); }
+function drawPareto(P,best){ const cv=document.getElementById('pareto'),W2=cv.width=cv.clientWidth,H=cv.height,ctx=cv.getContext('2d'); ctx.clearRect(0,0,W2,H);
+  const m1=P.map(p=>p.M1),m2=P.map(p=>p.M2),z1=Math.max(...P.map(p=>p.M3)),x0=Math.min(...m1),x1=Math.max(...m1),y0=Math.min(...m2),y1=Math.max(...m2),pad=34;
+  const sx=v=>pad+(v-x0)/((x1-x0)||1)*(W2-pad-12),sy=v=>H-22-(v-y0)/((y1-y0)||1)*(H-40);
+  ctx.strokeStyle='#262c38'; ctx.beginPath(); ctx.moveTo(pad,8); ctx.lineTo(pad,H-22); ctx.lineTo(W2-8,H-22); ctx.stroke();
+  ctx.fillStyle='#8890a1'; ctx.font='10px ui-monospace'; ctx.fillText('M1→',W2-30,H-6); ctx.save(); ctx.translate(11,52); ctx.rotate(-Math.PI/2); ctx.fillText('M2→',0,0); ctx.restore();
+  P.forEach(p=>{ const c=inferno(1-p.M3/(z1||1)); ctx.fillStyle=`rgb(${c.map(v=>v*255|0)})`; ctx.beginPath(); ctx.arc(sx(p.M1),sy(p.M2),3.6,0,7); ctx.fill(); });
+  if(best){ ctx.fillStyle='#7b8cff'; ctx.beginPath(); ctx.arc(sx(best.M1),sy(best.M2),6,0,7); ctx.fill(); ctx.strokeStyle='#fff'; ctx.lineWidth=1.4; ctx.stroke(); } }
+
+function csvcell(v){ v=String(v); return /[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v; }
+function saveResult(){ if(!LAST)return; const b=LAST.best,dist=(('currents'in b)||b.timemux),L=LAST,rows=[];
+  const kv=(k,v)=>rows.push(csvcell(k)+','+csvcell(v));
+  kv(t2('표적','Target'), targetObj()[LANG]);
+  kv(t2('표적 중심 (mm)','Target center (mm)'), (L.target_center||[]).join(' '));
+  kv(t2('표적 깊이 (mm)','Target depth (mm)'), L.target_info.depth_mm);
+  kv(t2('표적 부피 (복셀)','Target volume (vox)'), L.target_info.n_vox);
+  kv(t2('자극 방법','Method'), `${L.mode} / ${mlabel(L._method)}`);
+  kv(t2('주파수 (Hz)','Frequency (Hz)'), `${f1.value} / ${f2.value}`);
+  if(dist){ kv('M1 (V/m)',(b.M1_dir).toFixed(3)); kv('M2',(b.M2_dir).toFixed(2)); kv('M3 (%)',(b.M3_dir).toFixed(2)); kv('focality bound',(b.focality_bound||0).toFixed(2)); }
+  else{ kv('M1 (V/m)',(b.M1).toFixed(3)); kv('M2',(b.M2).toFixed(2)); kv('M3 (%)',(b.M3).toFixed(2)); kv('WP',(b.WP||0).toFixed(3)); }
+  kv(t2('세기 중앙값 (V/m)','Strength median (V/m)'), L.strength.median);
+  kv(t2('세기 범위 p10–p90','Strength p10–p90'), `${L.strength.p10} – ${L.strength.p90}`);
+  kv(t2('세기 최대 (V/m)','Strength max (V/m)'), L.strength.max);
+  kv(t2('엔벨로프 피크','Envelope peak'), `${L.focus.peak_in_target?t('sIn'):t('sOut')} ${L.focus.peak_dist_mm}mm`);
+  kv(t2('비표적 최대 (V/m)','Off-target max (V/m)'), L.focus.off_max);
+  kv(t2('HF peak 표적 (V/m)','HF peak target (V/m)'), L.safety.hf_peak_target);
+  kv(t2('HF peak 비표적 (V/m)','HF peak off (V/m)'), L.safety.hf_peak_off);
+  rows.push('');
+  const tmx=L.protocol.timemux;
+  rows.push([t2('전극','Electrode'),t2('채널','Channel'),t2('주파수(Hz)','Freq(Hz)'),t2('전류(mA)','Current(mA)'),t2('극성','Polarity')]
+            .concat(tmx?[t2('슬롯','Slot'),'duty']:[]).map(csvcell).join(','));
+  L.protocol.channels.forEach((ch,i)=>{ Object.entries(ch.currents_mA).forEach(([e,I])=>{
+    rows.push([e,`CH${tmx?((i%2)+1):(i+1)}`,ch.freq_Hz,I,I>=0?'+':'−'].concat(tmx?[ch.slot,ch.duty]:[]).map(csvcell).join(',')); }); });
+  // ── Sim4Life 분석을 했다면 그 결과도 같은 파일에 ─────────────────────
+  // 별도 파일로 내보내면 나중에 "이 CSV 의 몽타주와 저 분석이 같은 거였나" 를 못 맞춘다.
+  if(S4LRES&&S4LRES.res){
+    const S=S4LRES.res, T=S.target, sf=S.safety||{}, R=S.head_resistance_ohm||{};
+    rows.push(''); rows.push(csvcell('=== Sim4Life 정밀 검증 (머리 전체 유한요소) ==='));
+    kv(t2('격자','Grid'), (S.grid||[]).join(' x '));
+    kv(t2('캐시','Cached'), S.cached?`${t2('적중','hit')} (${S.cached_from||''})`:t2('새로 계산','fresh'));
+    kv(t2('캐시 키','Cache key'), S.cache_key||'');
+    kv(t2('채널 전류 (mA)','Channel currents (mA)'), `${S.currents_mA.ch1} / ${S.currents_mA.ch2}`);
+    kv(t2('머리 저항 ch1/ch2 (Ω)','Head resistance ch1/ch2 (ohm)'), `${(+R.ch1||0).toFixed(0)} / ${(+R.ch2||0).toFixed(0)}`);
+    kv(t2('피부 전류밀도 최대 (A/m²)','Skin J max (A/m2)'), (+sf.skin_J_max_A_per_m2||0).toFixed(3));
+    kv(t2('피부 E 최대 (V/m)','Skin E max (V/m)'), (+sf.skin_E_max_V_per_m||0).toFixed(2));
+    if(T&&!T.error){
+      rows.push('');
+      kv(t2('표적','Target'), `${T.name} (${T.n_target} vox, off ${T.n_off}, ${T.off_def})`);
+      rows.push([t2('지표','Metric'),t2('리드필드','Leadfield'),'Sim4Life',t2('비','Ratio')].map(csvcell).join(','));
+      ['M1','M2','M3'].forEach(k=>{ const v=(T.compare||{})[k], s=T.metrics_s4l[k];
+        rows.push([k, v?v.leadfield.toFixed(5):'', (+s).toFixed(5), v?v.ratio.toFixed(4):''].map(csvcell).join(',')); });
+      rows.push('');
+      rows.push(csvcell(t2(`구조별 자극 — 임계 ${T.threshold.value.toFixed(4)} V/m (표적 엔벨로프 중앙값) 초과`,
+                           `Per-structure — above ${T.threshold.value.toFixed(4)} V/m (target median)`)));
+      rows.push([t2('구조','Structure'),t2('복셀','Voxels'),t2('표적 내','In target'),
+                 t2('엔벨로프 중앙','Env median'),'p95',t2('최대','Max'),
+                 t2('임계 초과 복셀','Above thr'),t2('임계 초과 %','Above thr %')].map(csvcell).join(','));
+      T.regions.forEach(x=>rows.push([x.region,x.voxels,x.in_target,x.env_median.toFixed(5),
+        x.env_p95.toFixed(5),x.env_max.toFixed(5),x.over_thr_voxels,x.over_thr_pct.toFixed(2)].map(csvcell).join(',')));
+    }
+    rows.push('');
+    rows.push(csvcell(t2('조직별 (머리 전체)','Per-tissue (whole head)')));
+    rows.push([t2('조직','Tissue'),'sigma (S/m)',t2('셀','Cells'),t2('엔벨로프 중앙','Env median'),
+               'p95',t2('최대','Max'),'J max (A/m2)'].map(csvcell).join(','));
+    (S.tissues||[]).forEach(x=>rows.push([x.tissue,x.sigma,x.cells,x.env_median.toFixed(5),
+      x.env_p95.toFixed(5),x.env_max.toFixed(5),x.J_max.toFixed(4)].map(csvcell).join(',')));
+  }
+  const stamp=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  dl(new Blob(['﻿'+rows.join('\r\n')],{type:'text/csv;charset=utf-8'}), `ti_result_${stamp}.csv`);
+  try{ renderer.render(scene,camera); dlURL(renderer.domElement.toDataURL('image/png'), `ti_field_${stamp}.png`); }catch(e){}
+  // 단면 3장도 같은 시각 도장으로 — 나중에 CSV 와 짝을 맞출 수 있게
+  if(S4LRES&&S4LRES.res&&S4LRES.res.slices)
+    S4LRES.res.slices.forEach((s,i)=>setTimeout(()=>dlURL(
+      `/api/montage/file?job=${S4LRES.job}&f=${s.file}`, `ti_s4l_${s.plane}_${stamp}.png`), 250*(i+1)));
+}
+function dl(blob,name){ const u=URL.createObjectURL(blob); dlURL(u,name); setTimeout(()=>URL.revokeObjectURL(u),1000); }
+function dlURL(url,name){ const a=document.createElement('a'); a.href=url; a.download=name; a.click(); }
+init();
+</script>
+</body>
+</html>
