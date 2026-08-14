@@ -18,11 +18,25 @@ git clone <this repository>
 cd tip
 pip install -e ".[plot]"          # numpy + scipy (matplotlib for slice images)
 # put the data under inputs/ — see "Getting the data" below
-python -m tip.gui.app             # or double-click run_gui.bat on Windows
+python -m tip.gui.app             # or run_gui.bat (Windows) / ./run_gui.sh (macOS, Linux)
 ```
 
 A browser opens at `http://127.0.0.1:8765`. Pick a target → click electrodes in the 3D view →
 press **Compute**. The UI ships in English and Korean; toggle with the button in the header.
+
+### Which platform do I need?
+
+|  | Windows | macOS / Linux |
+|---|---|---|
+| planner, metrics, 3D view, result export | ✔ | ✔ |
+| montage re-solve in Sim4Life | ✔ | ✖ — Sim4Life is Windows-only |
+| NEURON axon models | via WSL | ✔ natively |
+
+The planner and the UI depend on nothing beyond numpy, scipy and the standard library, so they
+are fully cross-platform. Only the `tools/s4l/` scripts and **▶ Send to Sim4Life** need Windows,
+because Sim4Life itself does. A colleague on macOS can plan montages, compute M1/M2/M3, inspect
+the field in 3D and export results — and hand a montage to someone on Windows for the whole-head
+solve, or read one back from the cache.
 
 ---
 

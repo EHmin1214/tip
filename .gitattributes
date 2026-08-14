@@ -1,0 +1,12 @@
+# Normalise line endings so a shell script checked out on macOS or Linux is executable.
+# Without this, a Windows clone with core.autocrlf=true writes CRLF and the shebang breaks
+# with "bad interpreter: /usr/bin/env bash^M".
+* text=auto
+
+*.sh   text eol=lf
+*.bat  text eol=crlf
+
+*.npy  binary
+*.npz  binary
+*.png  binary
+*.smash binary

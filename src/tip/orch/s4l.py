@@ -64,15 +64,20 @@ _TODO = re.compile(r"targets\s+(\d+):")
 
 def s4l_python():
     """A Python that has `s4l_v1`. Same search order as `run_gui.bat`."""
+    venv = os.path.join(os.path.dirname(HERE), ".venv-s4l")
     cands = [
         os.environ.get("TIP_S4L_PYTHON") or "",
-        os.path.join(os.path.dirname(HERE), ".venv-s4l", "Scripts", "python.exe"),
+        os.path.join(venv, "Scripts", "python.exe"),   # Windows venv layout
+        os.path.join(venv, "bin", "python"),           # POSIX venv layout
         r"C:\Program Files\Sim4Life_9.6\Python\python.exe",
     ]
     for p in cands:
         if os.path.exists(p):
             return p
-    raise RuntimeError("No Sim4Life Python found - an environment with s4l_v1 is required")
+    raise RuntimeError(
+        "No Sim4Life Python found - an environment with `s4l_v1` is required. "
+        "Sim4Life is Windows-only; on macOS and Linux the planner and the UI work, "
+        "but montages cannot be re-solved. Set TIP_S4L_PYTHON to override the search.")
 
 
 #  ── Cancellation ────────────────────────────────────────────────────
@@ -104,11 +109,22 @@ def _check_cancel(jid):
 
 
 def _kill_tree(pid):
-    """Tear down the Sim4Life process tree. Skipping this leaves a worker holding 2-3 GB
-    and, worse, **the licence seat** (observed)."""
+    """Tear down the process tree. Skipping this leaves a worker holding 2-3 GB and, worse,
+    **the Sim4Life licence seat** (observed).
+
+    Sim4Life is Windows-only, so in practice this runs under `taskkill`. The POSIX branch
+    exists so the module behaves correctly on macOS and Linux, where the montage analysis
+    stage can still be run on its own.
+    """
     try:
-        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
-                       capture_output=True, timeout=30)
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                           capture_output=True, timeout=30)
+        else:
+            #  Kill the children first, then the process itself. `pkill -P` is enough here
+            #  because these trees are one level deep.
+            subprocess.run(["pkill", "-9", "-P", str(pid)], capture_output=True, timeout=30)
+            os.kill(pid, 9)
     except Exception:
         pass
 
