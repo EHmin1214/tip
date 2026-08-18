@@ -5,114 +5,377 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TI Planner</title>
 <style>
-  :root{ --bg:#0b0d12; --surface:#12151d; --surface2:#1a1f29; --border:#262c38; --border2:#313947;
-    --text:#e9ebf1; --dim:#8890a1; --faint:#5b6474; --accent:#7b8cff; --accent-2:#9aa6ff; --accent-soft:rgba(123,140,255,.13);
-    --mint:#4fe3bf; --anode:#ff6b6b; --cathode:#5b9bff; --good:#45d39e; --gold:#f5c451;
-    --mono:ui-monospace,"Cascadia Code",Consolas,"D2Coding",monospace; --sans:-apple-system,"Segoe UI",system-ui,"Malgun Gothic","Apple SD Gothic Neo",sans-serif; --r:12px; }
+  :root{ --bg:#242424; --surface:#2f2f2f; --surface2:#262626; --border:#3d3d3d; --border2:#4c4c4c;
+    /* ★글자 3단 램프 — 셋 다 WCAG 2.2 AA(4.5:1). --faint 는 단위(V/m)·복셀 수·힌트 같은
+       **정보를 담은 글자**에 쓰이므로 "보조 텍스트는 3:1" 완화를 적용하지 않았다.
+       측정(최악 = --surface2 위):  text 13.85 · dim 6.52 · faint 4.62
+       이전 값 #8890a1 / #5b6474 는 5.15 / **2.77** 로 faint 가 AA 미달이었다. */
+    --text:#dfdfdf; --dim:#aeaeae; --faint:#979797; --accent:#3aa5d9; --accent-2:#69c2ea; --accent-soft:rgba(58,165,217,.14);
+    --mint:#4cc9a4; --anode:#ea716d; --cathode:#5b9bd5; --good:#57b87f; --gold:#d9a63c;
+    --mono:ui-monospace,"Cascadia Code",Consolas,"D2Coding",monospace; /*  Helvetica 계열 그로테스크. ⚠ Helvetica·Arial 에는 한글 자소가 없으므로 한글 폰트를
+        반드시 뒤에 둬야 한다 — 안 그러면 한글만 기본 명조로 떨어진다.
+        윈도우는 Helvetica 를 Arial 로 대체하므로 실제 라틴 글자는 Arial 로 그려진다.  */
+    --sans:"Helvetica Neue",Helvetica,Arial,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+    /* ★한 줄로 <select> 팝업·숫자 스피너·스크롤바·자동완성이 전부 다크가 된다.
+       이게 없으면 근-검정 UI 위에 흰 네이티브 메뉴가 뜬다. */
+    color-scheme:dark;
+    --sh-focus:0 0 0 2px rgba(58,165,217,.55);
+
+    /* ══ 설계 토큰 ═══════════════════════════════════════════════════════════
+       이 블록은 **추가만** 한다. 사용처 이관은 다음 단계이고, 여기서는 화면이
+       바뀌지 않는 것이 성공 기준이다(위 글자 램프만 대비 감사 결과로 예외). */
+
+    /*  간격 — 4의 배수. 지금은 5·7·9·11·13·14·15·18px 이 뒤섞여 있다  */
+    --s0:2px; --s1:4px; --s2:6px; --s3:8px; --s4:12px; --s5:16px; --s6:20px; --s7:28px; --s8:40px;
+
+    /*  반경 — 실측 10종(4·5·6·7·8·9·10·11·12·20)을 5종으로.
+        --r4 를 기존 --r 과 같은 12px 로 둬서 이관이 시각적 무변화가 되게 했다  */
+    --r1:0px;    /* 칩·작은 채움 — 계측 UI 는 각이 진다 */
+    --r2:2px;    /* 입력·버튼 */
+    --r3:2px;    /* .seg .cta */
+    --r4:3px;    /* .panel .mc */
+    --rpill:2px;    /* 트랙 — 알약 모양을 쓰지 않는다 */
+    --r:var(--r4);
+
+    /*  입체 — 3D 뷰 위에 뜬 오버레이 5개가 지금 그림자가 없어 오려붙인 듯 보인다.
+        ★입체감은 정적이라 신뢰감을 깎지 않는다 — 이 계획에서 모션 없이 얻는 개선  */
+    --sh1:none;
+    --sh2:0 1px 3px rgba(0,0,0,.45);
+    --sh3:0 2px 8px rgba(0,0,0,.5);
+    --sh-ring:none;
+
+    /*  유리 — 오버레이 배경. ⚠ .fpanel 에는 블러를 걸지 말 것(60 fps WebGL 위 매 프레임 재계산)  */
+    --glass-1:#2b2b2b; --glass-2:#2d2d2d; --glass-3:#2f2f2f;
+    --glass-blur:none;   /* 블러 없음 — 계측 UI 는 불투명 패널 + 1px 테두리다 */
+    --glass-label:rgba(20,20,20,.78);   /* 3D 위 전극 이름표 — 뷰어 배경에 맞춘 별도 값 */
+    /* 표면 위에 덧칠하는 흰 틴트. 얼룩무늬·hover 처럼 배경색을 새로 정하지 않고 얹는 자리 */
+    --tint-1:rgba(255,255,255,.028); --tint-2:rgba(255,255,255,.05); --tint-3:rgba(255,255,255,.07);
+    --accent-hover:rgba(58,165,217,.14);
+    --good-soft:rgba(87,184,127,.14);
+    --vpad:14px;   /* 뷰어 오버레이 공통 여백 */
+    --viewer-1:#2a2a2a; --viewer-2:#141414;   /* 3D 무대 배경 — --bg 보다 어둡게 둬 오버레이가 뜬다 */
+    /* 3D 씬 전용 — three.js 는 CSS 를 못 읽으므로 readPal() 이 여기서 읽어 간다.
+       CSS 에서 직접 쓰이진 않지만 색 값이 한 자리에 모여 있어야 팔레트를 바꿀 때 어긋나지 않는다 */
+    --el-idle:#4a4a4a;   /* 미선택 전극 */
+    --cloud-idle:#3a3a3a; /* 유휴 상태의 뇌 점군. 뷰어 배경(#212121~#161616) 대비 1.42~1.59 — 개편 전(1.33~1.44)보다 조금 더 보인다 */
+    --el-off:#363636;    /* 계산 후 미사용 전극 — idle 보다 더 죽인다 */
+    --tgt-cloud:#42c98a; /* 표적 점군 */
+    --pick:#e8d24a;      /* 좌표 찍기 표식 */
+    --cbar-w:12px; /* 컬러바 폭. .cbar-l 오른쪽 위치가 --vpad 와 함께 여기서 파생된다 */
+
+    /*  타이포 — 실측 17종(반픽셀 9.5·10.5·11.5·12.5·13.5·14.5 포함)을 9종으로  */
+    --f-2xs:10px; --f-xs:11px; --f-sm:12px; --f-md:13px; --f-base:14px;
+    --f-lg:16px; --f-xl:19px; --f-2xl:26px; --f-3xl:30px;
+
+    /*  굵기 — 650 폐기. 시스템 폰트에 그 자소가 없어 브라우저마다 다르게 반올림된다  */
+    --w-med:500; --w-semi:600; --w-bold:700; --w-black:800;
+
+    /*  의미색 — 밝은 면 위 글자, 상태색, 보조 계열 (전부 AA 확인)  */
+    --on-accent:#101418; --on-mint:#0c1712;
+    --warn:#d9a63c; --warn-soft:rgba(217,166,60,.14);
+    --err:#ea716d;  --err-soft:rgba(234,113,109,.14);
+    /* 배너 — 알림 상자의 바탕·테두리·글자. JS 가 문자열로 조립하므로 readPal() 이 읽어 간다 */
+    --warn-bg:#332b18; --warn-bd:#5c4c24; --warn-fg:#e8c07a;
+    --err-bg:#331b1b;  --err-bd:#6b2f30;  --err-fg:#eda6a4;
+    --pick-y:#e8d24a;                       /* 최적 축 강조(파형·막대) */
+    --img-bg:#1c1c1c;                       /* 단면 영상 뒤 배경 */
+    --sec-af:#7fd9b4; --sec-field:#e8a87c;
+
+    /*  채널 — 지금 CHC(메시)·CHL(라벨)·PCOL(프로토콜) 세 벌이 같은 채널을 조금씩
+        다른 색으로 칠한다. 한 벌로 합치고 6슬롯(시분할 최대)까지 확장.
+        -t 는 어두운 배경 위 글자용인데 6색 모두 원색 그대로 AA 라 값이 같다 —
+        토큰은 남겨 둔다(팔레트를 바꿀 때 여기만 고치면 되도록)  */
+    --ch1:#ea716d; --ch2:#e69138; --ch3:#5b9bd5; --ch4:#4cc9a4; --ch5:#a98cd9; --ch6:#d9c23c;
+    --ch1-t:#ea716d; --ch2-t:#e69138; --ch3-t:#5b9bd5; --ch4-t:#4cc9a4; --ch5-t:#a98cd9; --ch6-t:#d9c23c;
+
+    /*  모션 — 계측 도구다. 색·테두리 전이만, --dur-1 이 사실상 상한이다.
+        --dur-2/3 은 오버레이 표시처럼 조작에 대한 응답에만 쓴다. transform 장식 금지  */
+    --dur-1:120ms; --dur-2:180ms; --dur-3:320ms; --ease:cubic-bezier(.4,0,.2,1); }
   *{ box-sizing:border-box; } html,body{ height:100%; margin:0; }
-  body{ background:var(--bg); color:var(--text); font-family:var(--sans); font-size:14px; line-height:1.5; }
+  body{ background:var(--bg); color:var(--text); font-family:var(--sans); font-size:var(--f-md); line-height:1.45; }
   .app{ display:grid; grid-template-columns:425px 1fr; grid-template-rows:auto 1fr; height:100vh; }
-  header{ grid-column:1/3; display:flex; align-items:center; gap:12px; padding:13px 20px; border-bottom:1px solid var(--border); background:var(--surface); }
-  .glyph{ width:30px;height:30px;border-radius:9px;background:var(--accent-soft);border:1px solid var(--accent);display:grid;place-items:center;color:var(--accent);font-weight:800;font-size:13px; }
-  header b{ font-weight:650; font-size:16px; } .sp{ flex:1; } .status{ font-family:var(--mono); font-size:12px; color:var(--dim); }
-  .lang{ background:var(--surface2); border:1px solid var(--border2); color:var(--dim); border-radius:8px; padding:6px 12px; cursor:pointer; font-size:12.5px; font-weight:600; }
+  header{ grid-column:1/3; display:flex; align-items:center; gap:10px; padding:8px 14px; border-bottom:1px solid var(--border); background:var(--surface); }
+  .glyph{ width:26px;height:26px;border-radius:var(--r1);background:var(--accent-soft);border:1px solid var(--accent);display:grid;place-items:center;color:var(--accent);font-weight:var(--w-black);font-size:var(--f-md); }
+  header b{ font-weight:var(--w-bold); font-size:var(--f-lg); } .sp{ flex:1; } .status{ font-family:var(--mono); font-size:var(--f-sm); color:var(--dim); }
+  .lang{ background:var(--surface2); border:1px solid var(--border2); color:var(--dim); border-radius:var(--r2); padding:6px 12px; cursor:pointer; font-size:var(--f-sm); font-weight:var(--w-semi); }
+  .lang{ transition:color .12s, border-color .12s; }
   .lang:hover{ color:var(--accent); border-color:var(--accent); }
-  .controls{ border-right:1px solid var(--border); overflow-y:auto; padding:18px; background:var(--surface); }
+  .controls{ border-right:1px solid var(--border); overflow-y:auto; padding:12px 14px; background:var(--surface); }
   .stage{ overflow:hidden; display:grid; grid-template-rows:minmax(0,1.4fr) minmax(0,1fr); }
-  .viewer{ position:relative; background:radial-gradient(120% 120% at 50% 0%, #10131a 0%, #06070a 100%); border-bottom:1px solid var(--border); overflow:hidden; }
-  .analysis{ overflow-y:auto; padding:16px 20px; display:flex; flex-direction:column; gap:14px; }
-  .grp{ margin-bottom:20px; } .grp.tight{ margin-bottom:14px; }
-  .lab{ font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin-bottom:9px; }
-  select,input{ width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:9px; padding:9px 11px; font-family:var(--sans); font-size:13.5px; outline:none; }
+  .viewer{ position:relative; background:radial-gradient(120% 120% at 50% 0%, var(--viewer-1) 0%, var(--viewer-2) 100%); border-bottom:1px solid var(--border); overflow:hidden; }
+  .analysis{ overflow-y:auto; padding:12px 14px; display:flex; flex-direction:column; gap:10px; }
+  .grp{ margin-bottom:14px; } .grp.tight{ margin-bottom:10px; }
+  .lab{ font-family:var(--mono); font-size:var(--f-2xs); letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin-bottom:9px; }
+  /* ⚠ background 단축이 아니라 background-color 다 — 단축을 쓰면 아래 select 의 셰브론
+     background-image 가 지워진다(규칙 순서와 무관하게). */
+  select,input{ width:100%; background-color:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:var(--r2); padding:9px 11px; font-family:var(--sans); font-size:var(--f-md); outline:none; transition:border-color .12s, background-color .12s; }
+  select:hover,input:hover{ border-color:var(--border2); background-color:var(--surface); }
   select:focus,input:focus{ border-color:var(--accent); }
-  .seg{ display:flex; gap:7px; background:var(--surface2); padding:4px; border-radius:11px; border:1px solid var(--border); }
-  .seg button{ flex:1; background:transparent; color:var(--dim); border:none; border-radius:8px; padding:8px; font-family:var(--sans); font-size:13px; font-weight:550; cursor:pointer; }
-  .seg button.on{ background:var(--accent); color:#0b0d12; }
+  select:disabled,input:disabled{ opacity:.45; cursor:not-allowed; }
+  input[aria-invalid="true"]{ border-color:var(--anode); }
+  /* 네이티브 화살표를 끄고 SVG 셰브론을 직접 그린다. JS 리스트박스는 만들지 않는다 —
+     buildTargets/targetObj/resetAll 이 .value·.selectedIndex·<option> 에 의존한다. */
+  select{ appearance:none; -webkit-appearance:none; cursor:pointer; padding-right:32px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%238890a1' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 11px center; }
+  option{ background:var(--surface2); color:var(--text); }
+  /* OS 스피너 제거. 증감이 실제로 쓸모 있는 개수형 3개에만 .stepper 로 버튼을 붙인다. */
+  input[type=number]{ appearance:textfield; -moz-appearance:textfield; }
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+  .stepper{ position:relative; }
+  .stepper input{ padding-right:46px; }
+  .stepper .stp{ position:absolute; top:4px; width:20px; height:calc(100% - 8px); border:0; background:transparent;
+    color:var(--dim); cursor:pointer; font:var(--w-semi) var(--f-md) var(--mono); border-radius:var(--r1); line-height:1; padding:0;
+    transition:background-color .12s, color .12s; }
+  .stepper .stp[data-d="-1"]{ right:25px; } .stepper .stp[data-d="1"]{ right:5px; }
+  .stepper .stp:hover{ background:var(--surface); color:var(--accent); }
+  /* 알약형 토글이 아니라 칸을 1px 로 나눈 툴바 — Sim4Life 의 모드 전환과 같은 꼴 */
+  .seg{ display:flex; gap:0; background:var(--surface2); padding:0; border-radius:var(--r3); border:1px solid var(--border); overflow:hidden; }
+  .seg button + button{ border-left:1px solid var(--border); }
+  /* 상태 행렬: hover·active·disabled 가 빠져 있던 자리를 채운다. 색·테두리만 바꾸고
+     transform 은 쓰지 않는다 — 계측 도구에서 움직이는 요소는 신뢰를 깎는다. */
+  /* 글자가 단어 중간에서 깨지지 않게 — 계측 툴바는 작고 촘촘한 라벨을 쓴다 */
+  .seg button{ flex:1; background:transparent; color:var(--dim); border:none; border-radius:var(--r2); padding:6px 4px; font-family:var(--sans); font-size:var(--f-xs); font-weight:var(--w-semi); line-height:1.35; word-break:keep-all; cursor:pointer; transition:background-color .12s, color .12s; }
+  .seg button:hover:not(.on){ background:var(--surface); color:var(--text); }
+  .seg button:active:not(.on){ background:var(--border); }
+  .seg button:disabled{ opacity:.4; cursor:not-allowed; }
+  .seg button.on{ background:var(--accent); color:var(--on-accent); }
   .row2{ display:grid; grid-template-columns:1fr 1fr; gap:9px; } .row3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:7px; }
-  .hint{ font-size:11.5px; color:var(--faint); margin-top:7px; }
-  .btn{ background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:9px; padding:8px 12px; font-family:var(--sans); font-size:12.5px; cursor:pointer; }
+  .hint{ font-size:var(--f-xs); color:var(--faint); margin-top:7px; }
+  .btn{ background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:var(--r2); padding:8px 12px; font-family:var(--sans); font-size:var(--f-sm); cursor:pointer; transition:border-color .12s, color .12s, background-color .12s; }
   .btn:hover{ border-color:var(--accent); color:var(--accent); }
-  .cta{ flex:1; background:var(--accent); color:#0b0d12; font-weight:700; border:none; border-radius:11px; padding:13px; font-size:15px; cursor:pointer; }
-  .cta:hover{ background:var(--accent-2); } .cta:disabled{ opacity:.5; cursor:not-allowed; }
-  .runrow{ display:flex; gap:9px; } .reset{ background:var(--surface2); border:1px solid var(--border2); color:var(--dim); border-radius:11px; padding:0 14px; cursor:pointer; font-size:13px; } .reset:hover{ color:var(--anode); border-color:var(--anode); }
+  .btn:active{ background:var(--surface); }
+  .btn:disabled{ opacity:.45; cursor:not-allowed; border-color:var(--border); color:var(--dim); }
+  .cta{ flex:1; background:var(--accent); color:var(--on-accent); font-weight:var(--w-bold); border:1px solid var(--accent); border-radius:var(--r3); padding:10px; font-size:var(--f-base); cursor:pointer; transition:background-color .12s, filter .12s; }
+  .cta:hover{ background:var(--accent-2); } .cta:active{ background:var(--accent); filter:brightness(.92); }
+  .cta:disabled{ opacity:.5; cursor:not-allowed; }
+  .runrow{ display:flex; gap:9px; } .reset{ background:var(--surface2); border:1px solid var(--border2); color:var(--dim); border-radius:var(--r3); padding:0 14px; cursor:pointer; font-size:var(--f-md); } .reset:hover{ color:var(--anode); border-color:var(--anode); }
   .prog{ margin-top:11px; display:none; } .prog.on{ display:block; }
-  .pbar{ height:7px; background:var(--surface2); border-radius:20px; overflow:hidden; border:1px solid var(--border); }
+  .pbar{ height:7px; background:var(--surface2); border-radius:var(--rpill); overflow:hidden; border:1px solid var(--border); }
   .pfill{ height:100%; width:0%; background:linear-gradient(90deg,var(--accent),var(--mint)); transition:width .2s; }
-  .pmeta{ display:flex; justify-content:space-between; font-family:var(--mono); font-size:11px; color:var(--dim); margin-top:6px; }
-  .selrow{ display:flex; justify-content:space-between; align-items:center; margin-bottom:9px; } .count{ font-family:var(--mono); font-size:12.5px; color:var(--accent); }
+  .pmeta{ display:flex; justify-content:space-between; font-family:var(--mono); font-size:var(--f-xs); color:var(--dim); margin-top:6px; }
+  /* 경과 시간 — 진행률이 멎어 보일 때 '도는 중'을 알리는 유일한 신호다 */
+  .pel{ color:var(--faint); margin-right:var(--s3); }
+  /* 전극 목록 — 3D 클릭과 동등한 키보드 경로 */
+  .elist{ margin-top:9px; }
+  .elist summary{ font-size:var(--f-sm); color:var(--dim); cursor:pointer; padding:var(--s1) var(--s2);
+    border-radius:var(--r1); list-style-position:inside; transition:color var(--dur-1); }
+  .elist summary:hover{ color:var(--text); }
+  .elist[open] summary{ color:var(--text); margin-bottom:var(--s2); }
+  .elgrid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(74px,1fr)); gap:var(--s0) var(--s1);
+    max-height:230px; overflow-y:auto; padding:var(--s1); border:1px solid var(--border); border-radius:var(--r2);
+    background:var(--bg); }
+  .elchk{ display:flex; align-items:center; gap:var(--s1); font-family:var(--mono); font-size:var(--f-2xs);
+    color:var(--dim); padding:2px var(--s1); border-radius:var(--r1); cursor:pointer;
+    transition:background-color var(--dur-1), color var(--dur-1); }
+  .elchk:hover{ background:var(--tint-3); color:var(--text); }
+  .elchk input{ width:12px; height:12px; margin:0; padding:0; accent-color:var(--accent); flex:none; cursor:pointer; }
+  .elchk input:checked + span{ color:var(--accent); font-weight:var(--w-semi); }
+  .elchk:has(input:disabled){ opacity:.45; cursor:not-allowed; }
+  /* 체크박스가 작아 링이 잘리므로 라벨 전체에 링을 준다 */
+  .elchk:focus-within{ box-shadow:var(--sh-focus); background:var(--tint-3); }
+  /* .topitem 이 이제 포커스를 받는다 — hover 와 같은 강조를 focus 에도 준다 */
+  .topitem:focus-visible{ box-shadow:var(--sh-focus); outline:none; }
+  /* 판정 밴드 — 이 화면에서 가장 큰 글자여야 한다. 정적, 전이 없음 */
+  /* 지표 설명 — title= 이 유일한 설명인데 힌트가 cursor:help 뿐이었다.
+     키보드로도 닿게 tabindex 를 주고 aria-label 로 같은 문구를 읽힌다(applyLang 이 채운다) */
+  .mc .qm{ display:inline-grid; place-items:center; width:13px; height:13px; margin-left:var(--s1);
+    border:1px solid var(--border2); border-radius:var(--rpill); font-size:9px; color:var(--faint);
+    vertical-align:top; transition:color var(--dur-1), border-color var(--dur-1); }
+  .mc:hover .qm,.mc:focus-visible .qm{ color:var(--accent); border-color:var(--accent); }
+  /* 프로토콜 표 — 행 왼쪽 색 띠가 3D 메시·라벨의 채널 색과 같은 한 벌이다 */
+  table.ptbl td:first-child{ border-left:3px solid var(--chc,transparent); padding-left:var(--s2); }
+  table.ptbl .pel{ font-family:var(--mono); font-weight:var(--w-semi); color:var(--text); }
+  table.ptbl .ppol{ font-family:var(--mono); font-weight:var(--w-bold); }
+  table.ptbl td{ text-align:right; } table.ptbl td:first-child,table.ptbl td:nth-child(2){ text-align:left; }
+  .topitem .dl{ display:block; grid-column:2/-1; font-family:var(--mono); font-size:var(--f-2xs); color:var(--faint); margin-top:2px; }
+  /* 파형 범례 — 네 선의 색이 무엇인지 지금까지 화면 어디에도 없었다 */
+  .envleg{ display:flex; flex-wrap:wrap; gap:var(--s2) var(--s5); margin-top:var(--s2);
+    font-family:var(--mono); font-size:var(--f-2xs); color:var(--dim); }
+  .envleg span{ display:inline-flex; align-items:center; gap:var(--s1); }
+  .envleg i{ width:14px; height:0; border-top:2px solid currentColor; display:inline-block; }
+  /* 표 행 ↔ 3D 연동 — hover 와 focus 에 같은 표시를 준다 */
+  tr.prow-hl{ cursor:default; }
+  tr.prow-hl:hover td,tr.prow-hl:focus-visible td{ background:var(--accent-hover); }
+  tr.prow-hl:focus-visible{ outline:none; }
+  tr.prow-hl:focus-visible td:first-child{ box-shadow:inset 2px 0 0 var(--accent); }
+  /* 토스트 — 상단 중앙. 정적으로 나타난다(등장 애니메이션 없음) */
+  #toastw{ position:fixed; top:var(--s5); left:50%; transform:translateX(-50%); z-index:9999;
+    display:flex; flex-direction:column; gap:var(--s2); pointer-events:none; }
+  .toast{ background:var(--glass-3); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    border:1px solid var(--border2); border-left:3px solid var(--accent); border-radius:var(--r2);
+    padding:var(--s3) var(--s5); font-size:var(--f-md); color:var(--text); box-shadow:var(--sh3);
+    max-width:min(560px,86vw); white-space:pre-wrap; }
+  .toast.err{ border-left-color:var(--err); }
+  .toast.ok{ border-left-color:var(--good); }
+  /* 대화상자 — top layer 라 z-index 협상이 없다 */
+  dialog#dlg{ background:var(--surface); color:var(--text); border:1px solid var(--border2);
+    border-radius:var(--r4); padding:var(--s5) var(--s6); max-width:min(520px,88vw);
+    font-family:var(--sans); font-size:var(--f-md); box-shadow:var(--sh3); }
+  dialog#dlg::backdrop{ background:rgba(0,0,0,.55); }
+  dialog#dlg .dmsg{ white-space:pre-wrap; line-height:1.6; }
+  dialog#dlg .drow{ display:flex; gap:var(--s3); justify-content:flex-end; margin-top:var(--s5); }
+  dialog#dlg .drow button{ flex:none; padding:8px 16px; }
+  .prow2{ display:flex; justify-content:flex-end; margin-top:var(--s2); }
+  .ptcopy{ padding:4px 10px; font-size:var(--f-2xs); }
+  .verdict{ background:var(--surface); border:1px solid var(--border); border-top:2px solid var(--accent);
+    border-radius:var(--r4); padding:var(--s4) var(--s5); margin-bottom:var(--s4); }
+  .verdict .vk{ font-family:var(--mono); font-size:var(--f-2xs); letter-spacing:.14em; text-transform:uppercase;
+    color:var(--accent); margin-bottom:var(--s2); }
+  .verdict .vmg{ font-family:var(--mono); font-size:var(--f-2xl); font-weight:var(--w-bold); color:var(--text);
+    letter-spacing:-.01em; line-height:1.15; word-break:break-word; }
+  .verdict .vrow{ display:flex; align-items:baseline; gap:var(--s2); margin-top:var(--s3); flex-wrap:wrap; }
+  .verdict .vm1{ font-size:var(--f-xl); font-weight:var(--w-bold); font-variant-numeric:tabular-nums; color:var(--mint); }
+  .verdict .vu{ font-size:var(--f-sm); color:var(--dim); }
+  .selrow{ display:flex; justify-content:space-between; align-items:center; margin-bottom:9px; } .count{ font-family:var(--mono); font-size:var(--f-sm); color:var(--accent); }
   .presets{ display:flex; flex-wrap:wrap; gap:7px; margin-top:10px; }
-  .pchip{ display:inline-flex; align-items:center; gap:6px; font-size:12px; background:var(--surface2); border:1px solid var(--border2); border-radius:20px; padding:5px 6px 5px 11px; }
-  .pchip button{ background:none; border:none; color:var(--faint); cursor:pointer; font-size:13px; } .pchip button:hover{ color:var(--anode); } .pchip .load{ cursor:pointer; }
-  .wt{ display:flex; align-items:center; gap:10px; margin:8px 0; } .wt label{ font-size:12px; width:82px; color:var(--dim); } .wt output{ font-family:var(--mono); font-size:12px; width:30px; text-align:right; color:var(--accent); }
-  input[type=range]{ -webkit-appearance:none; height:4px; background:var(--surface2); border:none; border-radius:20px; padding:0; }
-  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:var(--accent); cursor:pointer; }
-  .vhud{ position:absolute; left:14px; top:12px; font-family:var(--mono); font-size:11px; color:var(--dim); pointer-events:none; } .vhud b{ color:var(--text); }
-  .cbar{ position:absolute; right:14px; top:14px; bottom:14px; width:12px; border-radius:6px; background:linear-gradient(to top,#000004,#420a68,#932667,#dd513a,#fca50a,#fcffa4); border:1px solid var(--border); opacity:.9; display:none; }
-  .cbar-l{ position:absolute; right:30px; font-family:var(--mono); font-size:9.5px; color:var(--dim); display:none; }
-  .fmode{ position:absolute; left:50%; top:12px; transform:translateX(-50%); display:flex; background:rgba(10,13,18,.74); border:1px solid var(--border); border-radius:8px; overflow:hidden; z-index:5; }
-  .fmode button{ background:transparent; border:0; color:var(--dim); font:600 11px/1 var(--mono); padding:7px 13px; cursor:pointer; }
-  .fmode button.on{ background:#45d39e; color:#07130d; }
+  .pchip{ display:inline-flex; align-items:center; gap:6px; font-size:var(--f-sm); background:var(--surface2); border:1px solid var(--border2); border-radius:var(--rpill); padding:5px 6px 5px 11px; }
+  .pchip button{ background:none; border:none; color:var(--faint); cursor:pointer; font-size:var(--f-md); } .pchip button:hover{ color:var(--anode); } .pchip .load{ cursor:pointer; }
+  .wt{ display:flex; align-items:center; gap:10px; margin:8px 0; } .wt label{ font-size:var(--f-sm); width:82px; color:var(--dim); } .wt output{ font-family:var(--mono); font-size:var(--f-sm); width:30px; text-align:right; color:var(--accent); }
+  /* 채워진 구간이 보이는 크로스브라우저 슬라이더. Firefox 는 ::-moz-range-progress 로 공짜,
+     Chromium 은 JS 가 --p 를 세팅한다(rngFill). ⚠ .value 를 JS 로 바꿔도 input 이 안 뜨므로
+     resetAll·resolPreset·init 에서 rngFill 을 명시적으로 불러야 채움이 안 어긋난다. */
+  input[type=range]{ -webkit-appearance:none; appearance:none; height:18px; background:transparent; border:none; padding:0; cursor:pointer; --p:50%; }
+  input[type=range]::-webkit-slider-runnable-track{ height:5px; border-radius:var(--rpill);
+    background:linear-gradient(90deg,var(--accent) 0 var(--p),var(--surface2) var(--p) 100%); }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:14px; height:14px; margin-top:-4.5px; border-radius:50%; background:var(--text); border:2px solid var(--accent); cursor:pointer; }
+  input[type=range]::-moz-range-track{ height:5px; border-radius:var(--rpill); background:var(--surface2); }
+  input[type=range]::-moz-range-progress{ height:5px; border-radius:var(--rpill); background:var(--accent); }
+  input[type=range]::-moz-range-thumb{ width:14px; height:14px; border:2px solid var(--accent); border-radius:50%; background:var(--text); cursor:pointer; }
+  input[type=range]:focus-visible::-webkit-slider-thumb{ box-shadow:var(--sh-focus); }
+  input[type=range]:focus-visible::-moz-range-thumb{ box-shadow:var(--sh-focus); }
+  /* 포커스 표시는 outline 이 아니라 box-shadow — .seg/.fmode/.rp/.dbtn 은 border:none 이라
+     아웃라인이 둥근 부모에서 잘린다. */
+  :where(button,select,input,summary,a,[tabindex]):focus-visible{ outline:none; box-shadow:var(--sh-focus); border-color:var(--accent); }
+  :where(button,select,input):focus:not(:focus-visible){ outline:none; }
+  /* ── 뷰어 오버레이 ─────────────────────────────────────────────────────
+     여백은 전부 --vpad 에서 나온다. 낱개로 고치면 .cbar-l 처럼 파생값이 어긋난다. */
+  /* 배경이 없는 유일한 오버레이 — 3D 그라디언트 밝은 쪽에서 읽히도록 글자 그림자만 준다 */
+  /* 전류 경로 안내 — 몇 개를 그렸고 몇 개를 생략했는지. 조용히 자르지 않는다 */
+  .archud{ position:absolute; left:var(--vpad); top:calc(var(--vpad) + 18px); font-family:var(--mono);
+    font-size:var(--f-2xs); color:var(--faint); pointer-events:none; text-shadow:0 1px 3px rgba(0,0,0,.75); }
+  .vhud{ position:absolute; left:var(--vpad); top:var(--vpad); font-family:var(--mono); font-size:var(--f-xs); color:var(--dim);
+    pointer-events:none; text-shadow:0 1px 3px rgba(0,0,0,.75); } .vhud b{ color:var(--text); }
+  .cbar{ position:absolute; right:var(--vpad); top:var(--vpad); bottom:var(--vpad); width:var(--cbar-w); border-radius:var(--r1);
+    background:linear-gradient(to top,#000004,#420a68,#932667,#dd513a,#fca50a,#fcffa4);
+    border:1px solid var(--border); opacity:.9; display:none; box-shadow:var(--sh1); }
+  /* ★파생값 — 컬러바 오른쪽 끝에서 라벨만큼 더 안쪽. 손으로 30px 을 쓰면 --vpad 를 바꿀 때 어긋난다 */
+  .cbar-l{ position:absolute; right:calc(var(--vpad) + var(--cbar-w) + var(--s1));
+    font-family:var(--mono); font-size:var(--f-2xs); color:var(--dim); display:none; text-shadow:0 1px 3px rgba(0,0,0,.75); }
+  .fmode{ position:absolute; left:50%; top:var(--vpad); transform:translateX(-50%); display:flex;
+    background:var(--glass-1); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    border:1px solid var(--border); border-radius:var(--r2); overflow:hidden; z-index:5; box-shadow:var(--sh2), var(--sh-ring); }
+  .fmode button{ background:transparent; border:0; color:var(--dim); font:var(--w-semi) var(--f-xs)/1 var(--mono); padding:7px 13px; cursor:pointer; transition:background-color .12s, color .12s; }
+  .fmode button:hover:not(.on):not(:disabled){ background:var(--tint-3); color:var(--text); }
+  .fmode button.on{ background:var(--good); color:var(--on-mint); }
   .fmode button:disabled{ opacity:.38; cursor:not-allowed; }
-  .fpanel{ position:absolute; right:14px; top:14px; bottom:14px; width:296px; background:rgba(9,12,17,.94); border:1px solid var(--border); border-radius:10px; padding:12px 14px; font-family:var(--mono); font-size:11px; color:var(--text); display:none; z-index:6; overflow-y:auto; }
-  .fpanel h4{ margin:0 0 3px; font-size:11px; letter-spacing:.05em; color:#8fe6c4; } .fpanel .cls{ position:absolute; right:10px; top:8px; cursor:pointer; color:var(--dim); font-size:14px; }
-  .fpanel .prow{ display:flex; justify-content:space-between; margin:2px 0; color:var(--dim); } .fpanel .prow b{ color:var(--text); font-weight:600; }
-  .dbtn{ background:#1a2028; border:1px solid var(--border); color:#cbd3e0; font:600 10px var(--mono); padding:1px 7px; border-radius:4px; cursor:pointer; } .dbtn:hover{ background:#252d38; }
-  .wsec{ font-size:9.5px; letter-spacing:.03em; margin:8px 0 2px; padding-top:6px; border-top:1px solid var(--border); } .wsec.field{ color:#ffb48a; } .wsec.af{ color:#8fe6c4; }
-  .eflegend{ position:absolute; left:14px; bottom:14px; font-family:var(--mono); font-size:10px; color:var(--dim); background:rgba(9,12,17,.8); border:1px solid var(--border); border-radius:7px; padding:6px 9px; display:none; z-index:5; line-height:1.6; }
-  .resolp{ position:absolute; left:14px; bottom:14px; font-family:var(--mono); font-size:10.5px; color:var(--text); background:rgba(9,12,17,.92); border:1px solid var(--border); border-radius:8px; padding:8px 11px; z-index:5; display:none; max-width:70%; }
-  .resolp .rp{ background:#1a2028; border:1px solid var(--border); color:#cbd3e0; font:600 9.5px var(--mono); padding:2px 7px; border-radius:4px; cursor:pointer; margin-left:4px; } .resolp .rp:hover{ background:#252d38; } .resolp .rp.on{ background:#45d39e; color:#07130d; border-color:#45d39e; }
-  .resolp input[type=range]{ vertical-align:middle; accent-color:#45d39e; }
-  .elabel{ font-family:var(--mono); font-size:10px; color:#dfe3ee; background:rgba(11,13,18,.66); padding:1px 5px; border-radius:5px; border:1px solid var(--border2); pointer-events:none; white-space:nowrap; transform:translateY(-14px); }
-  .tlabel{ font-family:var(--mono); font-size:10.5px; color:#0b0d12; background:var(--gold); padding:1px 6px; border-radius:5px; pointer-events:none; transform:translateY(-16px); font-weight:600; }
+  /* ⚠ width:296px 와 padding 은 **동결** — 캔버스 7개가 width="268" 을 하드코딩하고
+     drawWave 가 cv.width 를 읽는다. 이미 2px 넘치는 상태다. 위치·그림자만 바꾼다.
+     ⚠ backdrop-filter 금지 — 60 fps WebGL 위에서 매 프레임 재계산된다(작은 오버레이만 블러). */
+  .fpanel{ position:absolute; right:var(--vpad); top:var(--vpad); bottom:var(--vpad); width:296px;
+    background:var(--glass-3); border:1px solid var(--border); border-radius:var(--r2); padding:12px 14px;
+    font-family:var(--mono); font-size:var(--f-xs); color:var(--text); display:none; z-index:6; overflow-y:auto;
+    box-shadow:var(--sh3), var(--sh-ring); }
+  .fpanel h4{ margin:0 0 3px; font-size:var(--f-xs); letter-spacing:.05em; color:var(--sec-af); } .fpanel .cls{ position:absolute; right:10px; top:8px; cursor:pointer; color:var(--dim); font-size:var(--f-base); }
+  .fpanel .prow{ display:flex; justify-content:space-between; margin:2px 0; color:var(--dim); } .fpanel .prow b{ color:var(--text); font-weight:var(--w-semi); }
+  /* .dbtn 과 .resolp .rp 는 같은 작은 버튼이다 — 값을 한 자리에 모은다 */
+  .dbtn,.resolp .rp{ background:var(--surface2); border:1px solid var(--border); color:var(--text);
+    font:var(--w-semi) var(--f-2xs) var(--mono); padding:1px 7px; border-radius:var(--r1); cursor:pointer;
+    transition:background-color var(--dur-1), border-color var(--dur-1), color var(--dur-1); }
+  .dbtn:hover,.resolp .rp:hover{ background:var(--border); }
+  .dbtn:active,.resolp .rp:active{ background:var(--border2); }
+  .wsec{ font-size:var(--f-2xs); letter-spacing:.03em; margin:8px 0 2px; padding-top:6px; border-top:1px solid var(--border); } .wsec.field{ color:var(--sec-field); } .wsec.af{ color:var(--sec-af); }
+  /* ⚠ .eflegend 와 .resolp 는 **같은 좌하단 자리**를 쓰고 동시에 안 보이는 전제다. 쌓지 말 것 */
+  .eflegend{ position:absolute; left:var(--vpad); bottom:var(--vpad); font-family:var(--mono); font-size:var(--f-2xs);
+    color:var(--dim); background:var(--glass-1); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    border:1px solid var(--border); border-radius:var(--r2); padding:var(--s2) var(--s3); display:none; z-index:5;
+    line-height:1.6; box-shadow:var(--sh2), var(--sh-ring); }
+  .resolp{ position:absolute; left:var(--vpad); bottom:var(--vpad); font-family:var(--mono); font-size:var(--f-2xs);
+    color:var(--text); background:var(--glass-2); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    border:1px solid var(--border); border-radius:var(--r2); padding:var(--s3) var(--s4); z-index:5; display:none;
+    max-width:70%; box-shadow:var(--sh2), var(--sh-ring); }
+  .resolp .rp{ padding:2px 7px; margin-left:var(--s1); }
+  .resolp .rp.on{ background:var(--good); color:var(--on-mint); border-color:var(--good); }
+  /* appearance:none 이후 accent-color 는 안 먹는다 — 토큰을 갈아끼워 캐스케이드로 초록을 낸다 */
+  .resolp input[type=range]{ vertical-align:middle; --accent:var(--good); width:118px; }
+  .elabel{ font-family:var(--mono); font-size:var(--f-2xs); color:var(--text); background:var(--glass-label); padding:1px 5px; border-radius:var(--r1); border:1px solid var(--border2); pointer-events:none; white-space:nowrap; transform:translateY(-14px); }
+  .tlabel{ font-family:var(--mono); font-size:var(--f-2xs); color:var(--on-accent); background:var(--gold); padding:1px 6px; border-radius:var(--r1); pointer-events:none; transform:translateY(-16px); font-weight:var(--w-semi); }
   .abar{ display:flex; justify-content:flex-end; } .savebtn{ display:none; }
-  .analysis{ font-size:14.5px; }
+  .analysis{ font-size:var(--f-base); }
   .metrics{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
-  .mc{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:14px 15px; cursor:help; }
-  .mc .k{ font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); }
-  .mc .v{ font-size:28px; font-weight:700; font-variant-numeric:tabular-nums; margin-top:5px; letter-spacing:-.02em; } .mc .u{ font-size:12.5px; color:var(--faint); margin-top:3px; }
-  .panel{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:16px 18px; }
-  .panel h3{ margin:0 0 5px; font-size:12px; font-family:var(--mono); letter-spacing:.09em; text-transform:uppercase; color:var(--dim); font-weight:600; }
-  .psub{ font-size:13px; color:var(--faint); margin:0 0 13px; line-height:1.45; }
+  .mc{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:11px 13px; cursor:help; }
+  .mc .k{ font-family:var(--mono); font-size:var(--f-xs); letter-spacing:.06em; text-transform:uppercase; color:var(--dim); }
+  .mc .v{ font-size:var(--f-2xl); font-weight:var(--w-bold); font-variant-numeric:tabular-nums; margin-top:5px; letter-spacing:-.02em; } .mc .u{ font-size:var(--f-sm); color:var(--faint); margin-top:3px; }
+  /* 계측 UI 의 패널 = 둥근 카드가 아니라 **구획**이다. 얇은 테두리 + 머리글 구분선 */
+  /* ⚠ 왼쪽 여백을 **자식 margin 으로 주면 안 된다**. `.panel > *{margin-left:14px}` 는
+     `.psub{margin:0 0 13px}` 처럼 margin 단축을 쓰는 자식 규칙에 같은 순위·나중 순서로
+     덮여 조용히 0 이 된다(실제로 머리글과 부제의 시작 위치가 어긋났다).
+     여백은 **패널 자신의 padding** 으로 주고, 머리글만 음수 margin 으로 밖으로 빼낸다 —
+     이러면 어떤 자식 규칙도 정렬을 깨지 못한다. */
+  .panel{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
+    padding:0 14px 14px; }
+  .panel > h3{ margin:0 -14px 10px; padding:7px 14px; background:var(--bg);
+    border-bottom:1px solid var(--border); }
+  .panel h3{ font-size:var(--f-xs); font-family:var(--mono); letter-spacing:.11em; text-transform:uppercase;
+    color:var(--dim); font-weight:var(--w-semi); }
+  .psub{ font-size:var(--f-md); color:var(--faint); margin:0 0 13px; line-height:1.45; }
   .agrid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:15px 22px; }
-  .stat .sk{ font-size:13px; color:var(--dim); } .stat .sv{ font-size:18px; font-weight:600; font-variant-numeric:tabular-nums; margin-top:2px; word-break:break-word; } .stat .sv small{ font-size:12.5px; color:var(--faint); font-weight:400; }
-  .badge{ font-family:var(--mono); font-size:12.5px; padding:2px 9px; border-radius:6px; } .badge.ok{ background:rgba(69,211,158,.12); color:var(--good); } .badge.no{ background:rgba(255,107,107,.12); color:var(--anode); }
-  .proto{ font-family:var(--mono); font-size:14px; line-height:1.9; overflow-x:auto; } .proto>div{ white-space:normal; word-break:break-word; } .proto .chl{ color:var(--dim); }
+  .stat .sk{ font-size:var(--f-md); color:var(--dim); } .stat .sv{ font-size:var(--f-xl); font-weight:var(--w-semi); font-variant-numeric:tabular-nums; margin-top:2px; word-break:break-word; } .stat .sv small{ font-size:var(--f-sm); color:var(--faint); font-weight:400; }
+  .badge{ font-family:var(--mono); font-size:var(--f-sm); padding:2px 9px; border-radius:var(--r1); } .badge.ok{ background:var(--good-soft); color:var(--good); } .badge.no{ background:var(--err-soft); color:var(--anode); }
+  .proto{ font-family:var(--mono); font-size:var(--f-base); line-height:1.9; overflow-x:auto; } .proto>div{ white-space:normal; word-break:break-word; } .proto .chl{ color:var(--dim); }
   .anode{ color:var(--anode); } .cathode{ color:var(--cathode); }
   .toplist{ display:flex; flex-direction:column; gap:8px; }
-  .topitem{ display:flex; align-items:center; gap:12px; padding:11px 13px; border:1px solid var(--border); border-radius:10px; cursor:pointer; background:var(--surface2); }
+  .topitem{ display:flex; align-items:center; gap:10px; padding:8px 11px; border:1px solid var(--border); border-radius:var(--r2); cursor:pointer; background:var(--surface2); transition:border-color .12s, background-color .12s; }
   .topitem:hover{ border-color:var(--accent); } .topitem.active{ border-color:var(--accent); background:var(--accent-soft); }
-  .topitem .rk{ font-family:var(--mono); font-size:13.5px; color:var(--accent); width:24px; } .topitem .mg{ flex:1; font-family:var(--mono); font-size:13.5px; } .topitem .sc{ font-family:var(--mono); font-size:12.5px; color:var(--dim); white-space:nowrap; }
-  .empty{ color:var(--dim); text-align:center; padding:26px 10px; font-size:13px; } .err{ color:var(--anode); font-size:13px; }
+  .topitem .rk{ font-family:var(--mono); font-size:var(--f-md); color:var(--accent); width:24px; } .topitem .mg{ flex:1; font-family:var(--mono); font-size:var(--f-md); } .topitem .sc{ font-family:var(--mono); font-size:var(--f-sm); color:var(--dim); white-space:nowrap; }
+  .empty{ color:var(--dim); text-align:center; padding:26px 10px; font-size:var(--f-md); } .err{ color:var(--anode); font-size:var(--f-md); }
   canvas.plot{ width:100%; display:block; }
   @media (max-width:900px){ .app{ grid-template-columns:1fr; grid-template-rows:auto auto 1fr; } .controls{ border-right:none; border-bottom:1px solid var(--border); } .stage{ grid-template-rows:340px auto; } .metrics{ grid-template-columns:repeat(2,1fr); } }
   /* ── Sim4Life 결과 패널 ── 핵심 숫자(지표·구조별 자극)를 크게, 나머지는 접어둔다 */
-  .s4lh{ font-size:14px; font-weight:700; color:var(--text); margin:20px 0 9px; display:flex; align-items:baseline; gap:9px; }
-  .s4lh small{ font-size:12px; font-weight:400; color:var(--dim); }
+  .s4lh{ font-size:var(--f-base); font-weight:var(--w-bold); color:var(--text); margin:20px 0 9px; display:flex; align-items:baseline; gap:9px; }
+  .s4lh small{ font-size:var(--f-sm); font-weight:400; color:var(--dim); }
   .s4lcmp{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
-  .s4lc{ background:var(--surface2); border:1px solid var(--border2); border-radius:12px; padding:13px 14px; }
-  .s4lc .n{ font-size:12px; color:var(--dim); letter-spacing:.04em; }
-  .s4lc .big{ font-size:26px; font-weight:800; line-height:1.15; margin:5px 0 2px; font-variant-numeric:tabular-nums; }
-  .s4lc .sub{ font-size:12px; color:var(--faint); font-variant-numeric:tabular-nums; }
-  .s4lc .rr{ font-size:13px; font-weight:700; margin-top:6px; font-variant-numeric:tabular-nums; }
+  .s4lc{ background:var(--surface2); border:1px solid var(--border2); border-radius:var(--r4); padding:13px 14px; }
+  .s4lc .n{ font-size:var(--f-sm); color:var(--dim); letter-spacing:.04em; }
+  .s4lc .big{ font-size:var(--f-2xl); font-weight:var(--w-black); line-height:1.15; margin:5px 0 2px; font-variant-numeric:tabular-nums; }
+  .s4lc .sub{ font-size:var(--f-sm); color:var(--faint); font-variant-numeric:tabular-nums; }
+  .s4lc .rr{ font-size:var(--f-md); font-weight:var(--w-bold); margin-top:6px; font-variant-numeric:tabular-nums; }
   .s4lreg{ display:flex; flex-direction:column; gap:7px; }
-  .s4lrow{ display:grid; grid-template-columns:112px 1fr 92px; align-items:center; gap:11px; font-size:13px; }
-  .s4lrow .nm{ font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .s4ltrk{ height:19px; background:var(--surface2); border:1px solid var(--border2); border-radius:6px; overflow:hidden; position:relative; }
-  .s4lfil{ height:100%; border-radius:5px 0 0 5px; }
-  .s4lrow .pc{ text-align:right; font-size:15px; font-weight:800; font-variant-numeric:tabular-nums; }
-  .s4lrow .pc small{ display:block; font-size:11px; font-weight:400; color:var(--faint); }
+  .s4lrow{ display:grid; grid-template-columns:112px 1fr 92px; align-items:center; gap:11px; font-size:var(--f-md); }
+  .s4lrow .nm{ font-weight:var(--w-semi); color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* 25 % 간격 기준선 — 절대 척도임이 눈에 보여야 한다 */
+  .s4ltrk{ height:19px; background:var(--surface2); border:1px solid var(--border2); border-radius:var(--r1); overflow:hidden; position:relative;
+    background-image:linear-gradient(90deg,transparent 0 calc(25% - 1px),var(--border2) calc(25% - 1px) 25%,transparent 25% calc(50% - 1px),
+      var(--border2) calc(50% - 1px) 50%,transparent 50% calc(75% - 1px),var(--border2) calc(75% - 1px) 75%,transparent 75%); }
+  .s4lfil{ height:100%; border-radius:var(--r1) 0 0 5px; min-width:2px; }  /* 1 % 미만도 한 조각은 보이게 */
+  .s4lrow .pc{ text-align:right; font-size:var(--f-lg); font-weight:var(--w-black); font-variant-numeric:tabular-nums; }
+  .s4lrow .pc small{ display:block; font-size:var(--f-xs); font-weight:400; color:var(--faint); }
   .s4lsaf{ display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:9px; }
-  .s4lsaf .stat{ background:var(--surface2); border:1px solid var(--border2); border-radius:11px; padding:10px 12px; }
-  .s4lsaf .sk{ font-size:11px; color:var(--dim); } .s4lsaf .sv{ font-size:19px; font-weight:700; margin-top:3px; font-variant-numeric:tabular-nums; }
-  .s4lsaf .sv small{ font-size:11px; font-weight:400; color:var(--faint); }
-  details.s4ld > summary{ cursor:pointer; font-size:13px; color:var(--dim); padding:7px 0; list-style:none; }
+  .s4lsaf .stat{ background:var(--surface2); border:1px solid var(--border2); border-radius:var(--r3); padding:10px 12px; }
+  .s4lsaf .sk{ font-size:var(--f-xs); color:var(--dim); } .s4lsaf .sv{ font-size:var(--f-xl); font-weight:var(--w-bold); margin-top:3px; font-variant-numeric:tabular-nums; }
+  .s4lsaf .sv small{ font-size:var(--f-xs); font-weight:400; color:var(--faint); }
+  details.s4ld > summary{ cursor:pointer; font-size:var(--f-md); color:var(--dim); padding:7px 0; list-style:none; }
   details.s4ld > summary::-webkit-details-marker{ display:none; }
   details.s4ld > summary::before{ content:'▸ '; } details.s4ld[open] > summary::before{ content:'▾ '; }
   details.s4ld > summary:hover{ color:var(--accent); }
-  table.s4lt{ border-collapse:collapse; font-size:12.5px; width:100%; font-variant-numeric:tabular-nums; }
+  /* .analysis 스크롤러와 싸우지 않도록 표 전용 스크롤러로 감싼다 */
+  .tscroll{ max-height:340px; overflow:auto; border:1px solid var(--border2); border-radius:var(--r2); margin-top:7px; }
+  table.s4lt{ border-collapse:separate; border-spacing:0; font-size:var(--f-sm); width:100%; min-width:460px; font-variant-numeric:tabular-nums; }
   table.s4lt th,table.s4lt td{ padding:5px 9px; text-align:right; border-bottom:1px solid var(--border2); white-space:nowrap; }
-  table.s4lt th{ color:var(--dim); font-weight:500; }
+  table.s4lt tbody tr:last-child td{ border-bottom:none; }
+  table.s4lt tbody tr:nth-child(even){ background:var(--tint-1); }
+  table.s4lt tbody tr:hover{ background:var(--accent-hover); }
+  table.s4lt th{ color:var(--dim); font-weight:var(--w-med); position:sticky; top:0; z-index:1;
+    background:var(--surface); border-bottom:1px solid var(--border); }
   table.s4lt th:first-child,table.s4lt td:first-child{ text-align:left; }
+
+  /* ★prefers-reduced-motion — 정보는 남기고 움직임만 없앤다.
+     이 도구의 전이는 전부 색·테두리라 제거해도 잃는 정보가 없다. */
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{ transition-duration:.01ms !important; animation-duration:.01ms !important;
+      animation-iteration-count:1 !important; scroll-behavior:auto !important; }
+  }
 </style>
 </head>
 <body>
@@ -129,27 +392,35 @@
       </div>
     </div>
     <div class="grp"><div class="lab" data-i18n="mode">자극 모드</div>
-      <div class="seg"><button class="on" data-mode="classic" onclick="setMode('classic')">Classic 2ch</button><button data-mode="gevd" onclick="setMode('gevd')" data-i18n="gevd">GEVD 분산</button><button data-mode="dual" onclick="setMode('dual')" data-i18n="dual">4채널 이중TI</button><button data-mode="timemux" onclick="setMode('timemux')" data-i18n="tmMode" title="시분할: 여러 몽타주를 duty로 순차 스위칭. 전극 예산 내에서 조합을 최대한 많이 만들어 off 부하를 분산. 고강도 영역에서 단일 2쌍 대비 초점 개선.">시분할</button><button data-mode="selective" onclick="setMode('selective')" data-i18n="selMode" title="실험적: 이중기전(필드+AF)·방향최악 선택성 목적함수 — NEURON Q3 대응" style="color:#ffb454">(β) 선택성</button></div>
+      <div class="seg" role="tablist" aria-label="자극 모드"><button class="on" role="tab" aria-selected="true" data-mode="classic" onclick="setMode('classic')">Classic 2ch</button><button role="tab" aria-selected="false" data-mode="gevd" onclick="setMode('gevd')" data-i18n="gevd">GEVD 분산</button><button role="tab" aria-selected="false" data-mode="dual" onclick="setMode('dual')" data-i18n="dual">4채널 이중TI</button><button role="tab" aria-selected="false" data-mode="timemux" onclick="setMode('timemux')" data-i18n="tmMode" title="시분할: 여러 몽타주를 duty로 순차 스위칭. 전극 예산 내에서 조합을 최대한 많이 만들어 off 부하를 분산. 고강도 영역에서 단일 2쌍 대비 초점 개선.">시분할</button><button role="tab" aria-selected="false" data-mode="selective" onclick="setMode('selective')" data-i18n="selMode" title="실험적: 이중기전(필드+AF)·방향최악 선택성 목적함수 — NEURON Q3 대응" style="color:var(--warn)">(β) 선택성</button></div>
       <div id="tmbox" style="display:none;margin-top:10px">
-        <div class="row2"><div><div class="hint" style="margin:0 0 5px" data-i18n="tmSlots">최대 슬롯 수</div><input type="number" id="kslots" value="4" min="2" max="8" step="1"></div>
-          <div><div class="hint" style="margin:0 0 5px" data-i18n="tmElec">전극 예산</div><input type="number" id="maxelec" value="8" min="4" max="24" step="1"></div></div>
-        <div class="wt" style="margin-top:8px"><label style="width:96px" data-i18n="tmFloor">강도 유지율</label><input type="range" id="m1floor" min="0.80" max="0.99" step="0.01" value="0.94" oninput="document.getElementById('m1fo').textContent=(+this.value).toFixed(2)"><output id="m1fo">0.94</output></div>
+        <div class="row2"><div><div class="hint" style="margin:0 0 5px" data-i18n="tmSlots">최대 슬롯 수</div><div class="stepper"><input type="number" id="kslots" value="4" min="2" max="8" step="1"><button class="stp" data-d="-1" tabindex="-1" aria-hidden="true">−</button><button class="stp" data-d="1" tabindex="-1" aria-hidden="true">+</button></div></div>
+          <div><div class="hint" style="margin:0 0 5px" data-i18n="tmElec">전극 예산</div><div class="stepper"><input type="number" id="maxelec" value="8" min="4" max="24" step="1"><button class="stp" data-d="-1" tabindex="-1" aria-hidden="true">−</button><button class="stp" data-d="1" tabindex="-1" aria-hidden="true">+</button></div></div></div>
+        <div class="wt" style="margin-top:8px"><label style="width:96px" data-i18n="tmFloor" for="m1floor">강도 유지율</label><input type="range" id="m1floor" min="0.80" max="0.99" step="0.01" value="0.94" oninput="document.getElementById('m1fo').textContent=(+this.value).toFixed(2)"><output id="m1fo">0.94</output></div>
         <div class="hint" data-i18n="tmHint">전극은 슬롯 간 재사용됩니다(예산 &lt; 4×슬롯 가능). 강도 유지율이 높을수록 시분할 이점이 커지는 영역입니다.</div></div>
-      <div id="huangbox" style="display:none;margin-top:10px"><div class="lab" data-i18n="pmaxLabel">Pmax — 초점 ↔ 강도</div>
-        <div class="wt"><input type="range" id="pmaxval" min="0.02" max="1.0" step="0.02" value="0.15" oninput="document.getElementById('pmaxo').textContent=(+this.value).toFixed(2)"><output id="pmaxo">0.15</output></div>
+      <div id="huangbox" style="display:none;margin-top:10px"><div class="lab" id="pmaxLab" data-i18n="pmaxLabel">Pmax — 초점 ↔ 강도</div>
+        <div class="wt"><input type="range" id="pmaxval" aria-labelledby="pmaxLab" min="0.02" max="1.0" step="0.02" value="0.15" oninput="document.getElementById('pmaxo').textContent=(+this.value).toFixed(2)"><output id="pmaxo">0.15</output></div>
         <div class="hint" data-i18n="pmaxHint">낮을수록 초점(강도↓) · 높을수록 강도(=HD-TES 융합). off 변조파워 상한.</div></div>
       <div id="kbox" style="display:none;margin-top:10px"><div class="lab" data-i18n="kLabel">사용할 전극 개수 (K)</div>
-        <input type="number" id="kval" value="32" min="4" step="1"><div class="hint" data-i18n="kHint">풀에서 최적 K개 선택. 방향은 표적에서 자동.</div></div>
+        <div class="stepper"><input type="number" id="kval" value="32" min="4" step="1"><button class="stp" data-d="-1" tabindex="-1" aria-hidden="true">−</button><button class="stp" data-d="1" tabindex="-1" aria-hidden="true">+</button></div><div class="hint" data-i18n="kHint">풀에서 최적 K개 선택. 방향은 표적에서 자동.</div></div>
     </div>
     <div class="grp"><div class="selrow"><div class="lab" style="margin:0" data-i18n="elec">사용가능 전극</div><span class="count"><span id="cnt">0</span> <span data-i18n="selected">선택</span></span></div>
       <div class="hint" style="margin-top:0" data-i18n="elecHint">3D에서 전극 클릭=선택 · 드래그=회전</div>
-      <div class="row2" style="margin-top:9px"><button class="btn" onclick="selectAll(true)" data-i18n="selAll">전체 선택</button><button class="btn" onclick="selectAll(false)" data-i18n="deselAll">모두 해제</button></div></div>
+      <div class="row2" style="margin-top:9px"><button class="btn" onclick="selectAll(true)" data-i18n="selAll">전체 선택</button><button class="btn" onclick="selectAll(false)" data-i18n="deselAll">모두 해제</button></div>
+      <!-- ★3D 클릭과 **동등한** 키보드 경로. 3D 를 대체하지 않고 나란히 둔다 —
+           지금까지 전극 선택의 유일한 경로가 캔버스 클릭이라 키보드로는 도구를 쓸 수 없었다.
+           양방향 동기화는 refreshSel() 한 곳에서만 한다(3D·목록·개수의 단일 경로). -->
+      <details class="elist" id="elistbox">
+        <summary data-i18n="elListOpen">전극 목록에서 선택 (키보드)</summary>
+        <div class="elgrid" id="elgrid" role="group" aria-label="전극 선택"></div>
+        <div class="hint" id="elistlock" style="display:none" data-i18n="elListLocked">결과 표시 중에는 잠깁니다 — ↺ 초기화 후 다시 선택하세요.</div>
+      </details></div>
     <div class="grp"><div class="selrow"><div class="lab" style="margin:0" data-i18n="presets">내 프리셋</div><button class="btn" style="padding:5px 10px" onclick="savePreset()" data-i18n="savePreset">＋ 저장</button></div>
       <div class="presets" id="presets"></div><div class="hint" id="presethint" data-i18n="presetHint">선택 조합을 저장해 재사용</div></div>
     <div class="grp" id="wtgrp"><div class="lab" data-i18n="weights">지표 가중치 (최적안 선택)</div>
-      <div class="wt"><label data-i18n="wM1">M1 세기</label><input type="range" id="w1" min="0" max="1" step="0.05" value="0.5" oninput="onWeight()"><output id="w1o">0.5</output></div>
-      <div class="wt"><label data-i18n="wM2">M2 초점</label><input type="range" id="w2" min="0" max="1" step="0.05" value="0.5" oninput="onWeight()"><output id="w2o">0.5</output></div>
-      <div class="wt"><label data-i18n="wM3">M3 누출↓</label><input type="range" id="w3" min="0" max="1" step="0.05" value="0.5" oninput="onWeight()"><output id="w3o">0.5</output></div></div>
+      <div class="wt"><label data-i18n="wM1" for="w1">M1 세기</label><input type="range" id="w1" min="0" max="1" step="0.05" value="0.5" oninput="onWeight()"><output id="w1o">0.5</output></div>
+      <div class="wt"><label data-i18n="wM2" for="w2">M2 초점</label><input type="range" id="w2" min="0" max="1" step="0.05" value="0.5" oninput="onWeight()"><output id="w2o">0.5</output></div>
+      <div class="wt"><label data-i18n="wM3" for="w3">M3 누출↓</label><input type="range" id="w3" min="0" max="1" step="0.05" value="0.5" oninput="onWeight()"><output id="w3o">0.5</output></div></div>
     <div class="grp tight" id="freqbox"><div class="lab" data-i18n="freq">반송파 주파수</div>
       <div class="row2"><div><div class="hint" style="margin:0 0 5px">f₁ (Hz)</div><input type="number" id="f1" value="2000" oninput="showDf()"></div><div><div class="hint" style="margin:0 0 5px">f₂ (Hz)</div><input type="number" id="f2" value="2100" oninput="showDf()"></div></div>
       <div class="hint" id="dfhint" style="margin-top:6px">Δf = 100 Hz</div></div>
@@ -158,26 +429,26 @@
       <div class="row2" style="margin-top:7px"><div><div class="hint" style="margin:0 0 5px">B·ch3</div><input type="number" id="df3" value="2500"></div><div><div class="hint" style="margin:0 0 5px">B·ch4</div><input type="number" id="df4" value="2510"></div></div>
       <div class="hint" style="margin-top:6px;opacity:.7" data-i18n="dualHint">A쌍·B쌍은 각각 Δf로 맥놀이, 두 대역은 떨어뜨려 쌍간 간섭 방지</div></div>
     <div class="runrow"><button class="cta" id="run" onclick="compute()" data-i18n="run">계산</button><button class="reset" onclick="resetAll()" data-i18n="reset">↺ 초기화</button></div>
-    <div class="prog" id="prog"><div class="pbar"><div class="pfill" id="pfill"></div></div><div class="pmeta"><span id="pstage">—</span><span id="ppct">0%</span></div></div>
+    <div class="prog" id="prog"><div class="pbar"><div class="pfill" id="pfill"></div></div><div class="pmeta"><span id="pstage" aria-live="polite">—</span><span><span id="pelapsed" class="pel"></span><span id="ppct">0%</span></span></div></div>
     <div class="grp" id="s4lgrp" style="margin-top:11px"><div class="selrow"><div class="lab" style="margin:0" data-i18n="s4lTitle">Sim4Life 정밀 검증</div><span class="count" id="s4lstat">idle</span></div>
       <div class="hint" style="margin-top:0" data-i18n="s4lHint">계산한 몽타주를 Sim4Life 로 보내 머리 전체를 유한요소로 다시 풉니다 (약 7분). 리드필드는 뇌 복셀만 담아 두피 전류밀도 같은 안전 지표를 못 봅니다 — 그게 여기서만 나옵니다. 전에 같은 분석을 했다면 즉시 꺼내옵니다.</div>
       <button class="btn" style="margin-top:9px;width:100%" onclick="s4lSendMontage()" data-i18n="s4lSend">▶ Sim4Life 로 보내기</button>
-      <div class="prog" id="s4lprog" style="display:none;margin-top:9px"><div class="pbar"><div class="pfill" id="s4lfill"></div></div><div class="pmeta"><span id="s4lstage">—</span><span id="s4lpct">0%</span></div>
+      <div class="prog" id="s4lprog" style="display:none;margin-top:9px"><div class="pbar"><div class="pfill" id="s4lfill"></div></div><div class="pmeta"><span id="s4lstage" aria-live="polite">—</span><span id="s4lpct">0%</span></div>
         <button class="reset" id="s4lcancel" style="display:none;width:100%;margin-top:8px;padding:8px" onclick="s4lCancel()" data-i18n="s4lCancel">■ 취소</button></div>
       <div class="hint" id="s4llog" style="margin-top:6px;white-space:pre-wrap;max-height:130px;overflow:auto"></div></div>
   </div>
 
   <div class="stage">
-    <div class="viewer" id="viewer"><div class="vhud" id="vhud"></div><div class="cbar" id="cbar"></div><div class="cbar-l" id="cbarHi" style="top:14px" data-i18n="strong">강</div><div class="cbar-l" id="cbarLo" style="bottom:14px" data-i18n="weak">약</div>
-      <div class="fmode" id="fmode"><button class="on" id="fmInt" onclick="setFMode('intensity')" data-i18n="fmField">필드</button><button id="fmAf" onclick="setFMode('af')" disabled data-i18n="fmAf">활성화함수</button><button id="fmEf" onclick="setFMode('efield')" disabled data-i18n="fmVec">벡터·파형</button></div>
+    <div class="viewer" id="viewer" role="img" aria-label="3D 두부 모형"><div class="vhud" id="vhud"></div><div class="archud" id="archud" style="display:none"></div><div class="cbar" id="cbar"></div><div class="cbar-l" id="cbarHi" style="top:var(--vpad)" data-i18n="strong">강</div><div class="cbar-l" id="cbarLo" style="bottom:var(--vpad)" data-i18n="weak">약</div>
+      <div class="fmode" id="fmode" role="tablist" aria-label="시야 모드"><button class="on" id="fmInt" onclick="setFMode('intensity')" data-i18n="fmField">필드</button><button id="fmAf" onclick="setFMode('af')" disabled data-i18n="fmAf">활성화함수</button><button id="fmEf" onclick="setFMode('efield')" disabled data-i18n="fmVec">벡터·파형</button></div>
       <div class="resolp" id="resolp">
-        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><b data-i18n="resolTitle">활성 임계</b>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><b id="resolLab" data-i18n="resolTitle">활성 임계</b>
           <button class="rp on" id="refT" onclick="resolSetRef('target')" data-i18n="refTgt">표적 대비</button><button class="rp" id="refM" onclick="resolSetRef('max')" data-i18n="refMax">최대 대비</button>
-          <input type="range" id="resolSl" min="0" max="100" value="50" step="1" oninput="resolCompute()" style="width:118px">
+          <input type="range" id="resolSl" aria-labelledby="resolLab" min="0" max="100" value="50" step="1" oninput="resolCompute()" style="width:118px">
           <span id="resolPct">50%</span>
           <button class="rp" onclick="resolPreset(50)">50%</button><button class="rp" onclick="resolPreset(90)">90%</button></div>
         <div id="resolOut" style="margin-top:5px;color:var(--dim)"></div></div>
-      <div class="eflegend" id="eflegend"><span style="color:#ff7a7a">▬</span> E₁ (반송파1) &nbsp; <span style="color:#6aa8ff">▬</span> E₂ (반송파2)<br><span data-i18n="efHint">화살표 길이=세기 · 점 클릭=분석(최강점 스냅) · Ctrl+휠=깊이 · 그냥 휠=줌</span></div>
+      <div class="eflegend" id="eflegend"><span style="color:var(--ch1)">▬</span> E₁ (반송파1) &nbsp; <span style="color:var(--ch3)">▬</span> E₂ (반송파2)<br><span data-i18n="efHint">화살표 길이=세기 · 점 클릭=분석(최강점 스냅) · Ctrl+휠=깊이 · 그냥 휠=줌</span></div>
       <div class="fpanel" id="fpanel"><span class="cls" onclick="document.getElementById('fpanel').style.display='none'">✕</span>
         <h4 id="fpTitle">위치 분석</h4><div id="fpInfo"></div>
         <div id="fpDrive" style="font-size:10px;margin:2px 0"></div>
@@ -189,30 +460,49 @@
     <div class="analysis" id="analysis">
       <div class="abar"><button class="btn savebtn" id="savebtn" onclick="saveResult()" data-i18n="saveResult">결과 저장</button></div>
       <div id="freqwarn" style="display:none"></div>
-      <div class="metrics">
-        <div class="mc" id="mcM1"><div class="k">M1</div><div class="v" id="m1">—</div><div class="u" data-i18n="m1u">표적 세기 (V/m)</div></div>
-        <div class="mc" id="mcM2"><div class="k">M2</div><div class="v" id="m2">—</div><div class="u" data-i18n="m2u">초점 정확도 ↑</div></div>
-        <div class="mc" id="mcM3"><div class="k">M3</div><div class="v" id="m3">—</div><div class="u" data-i18n="m3u">누출 % ↓</div></div>
-        <div class="mc" id="mcM4"><div class="k" id="m4k">WP</div><div class="v" id="m4">—</div><div class="u" id="m4u" data-i18n="wpu">종합 점수</div></div>
-      </div>
       <div class="panel" id="topbox" style="display:none"><h3 data-i18n="mTop">상위 조합</h3><p class="psub" data-i18n="mTopSub">가중치 기준 상위 5 — 클릭해서 보기</p><div class="toplist" id="toplist"></div></div>
+      <!-- ★판정 밴드 — "전극을 어디에 붙이나" 가 이 도구의 답이다.
+           그런데 지금까지 그 답은 세 패널 아래 단조 텍스트에 묻혀 있었고, 화면 맨 위는
+           M1/M2/M3/WP 카드 4개가 동등한 무게로 차지하고 있었다. 답을 맨 위로 올린다.
+           ⚠ 값은 즉시 최종값으로 나타난다 — 숫자를 애니메이션으로 올리면 확정된 값인지
+           의심하게 된다(계측 도구). -->
+      <div class="verdict" id="verdict" style="display:none">
+        <div class="vk" data-i18n="vBest">최적 몽타주</div>
+        <div class="vmg" id="vmg">—</div>
+        <div class="vrow"><span class="vm1" id="vm1">—</span><span class="vu" data-i18n="m1u">표적 세기 (V/m)</span><span id="vbadge"></span></div>
+      </div>
+      <div class="metrics">
+        <div class="mc" id="mcM1" tabindex="0"><div class="k">M1<span class="qm" aria-hidden="true">?</span></div><div class="v" id="m1">—</div><div class="u" data-i18n="m1u">표적 세기 (V/m)</div></div>
+        <div class="mc" id="mcM2" tabindex="0"><div class="k">M2<span class="qm" aria-hidden="true">?</span></div><div class="v" id="m2">—</div><div class="u" data-i18n="m2u">초점 정확도 ↑</div></div>
+        <div class="mc" id="mcM3" tabindex="0"><div class="k">M3<span class="qm" aria-hidden="true">?</span></div><div class="v" id="m3">—</div><div class="u" data-i18n="m3u">누출 % ↓</div></div>
+        <div class="mc" id="mcM4" tabindex="0"><div class="k" id="m4k">WP</div><div class="v" id="m4">—</div><div class="u" id="m4u" data-i18n="wpu">종합 점수</div></div>
+      </div>
+      <div class="panel" id="montagebox"><h3 data-i18n="mMontage">몽타주 · 프로토콜</h3><p class="psub" data-i18n="mMontageSub">전극 위치·전류 (빨강=채널1 f₁, 파랑=채널2 f₂, 극성은 +/−) · 자극기 설정</p><div id="montage" class="empty" data-i18n="emptyState">표적·전극·모드를 고르고 계산을 누르세요.</div></div>
+      <!-- ★엔벨로프 형성 — TI 의 기전. 지금까지 화면 어디에도 상시로 없었다. -->
+      <div class="panel" id="envbox" style="display:none"><h3 data-i18n="mEnv">엔벨로프 형성</h3>
+        <p class="psub" id="envsub"></p>
+        <canvas class="plot" id="envwave" height="150"></canvas>
+        <div class="envleg" id="envleg"></div>
+        <div class="hint" data-i18n="mEnvHint">두 반송파는 각각 너무 빨라 뉴런이 못 따라갑니다. 뉴런이 느끼는 것은 둘의 간섭이 만드는 <b>포락선</b>(금색)이고, 그 진폭이 곧 자극량 Tmax 입니다.</div>
+      </div>
       <div class="panel" id="detail" style="display:none"><h3 data-i18n="mDetail">상세 분석</h3><div class="agrid" id="agrid"></div></div>
-      <div class="panel"><h3 data-i18n="mMontage">몽타주 · 프로토콜</h3><p class="psub" data-i18n="mMontageSub">전극 위치·전류 (빨강=채널1 f₁, 파랑=채널2 f₂, 극성은 +/−) · 자극기 설정</p><div id="montage" class="empty" data-i18n="emptyState">표적·전극·모드를 고르고 계산을 누르세요.</div></div>
       <div class="panel" id="histbox" style="display:none"><h3 data-i18n="mHist">누적 분포</h3><p class="psub" data-i18n="mHistSub">각 세기 이상으로 자극된 부피 비율 (표적 vs 비표적)</p><canvas class="plot" id="hist" height="150"></canvas></div>
       <div class="panel" id="s4lbox" style="display:none"><h3 data-i18n="s4lPanel">Sim4Life 머리 전체 분석</h3>
         <p class="psub" id="s4lsub"></p>
         <div id="s4ltgt"></div>
-        <div id="s4lgrid" style="display:none"></div><div id="s4ltbl" style="display:none"></div>
-        <div id="s4limgs" style="display:none"></div></div>
+        </div>
     </div>
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+<!-- ★three.js 는 저장소 안에 둔다(gui/vendor/, app.py 가 /vendor/ 로 준다).
+     CDN 을 쓰면 인터넷이 막힌 자리에서 THREE is not defined 로 3D 가 통째로 죽었고,
+     화면엔 아무 설명도 안 나왔다. 버전 고정 효과는 덤이다(r128 · OrbitControls · CSS2DRenderer). -->
+<script src="/vendor/three.min.js"></script>
+<script src="/vendor/OrbitControls.js"></script>
+<script src="/vendor/CSS2DRenderer.js"></script>
 <script>
-const T={ko:{target:"표적",mode:"자극 모드",gevd:"분산 자극 (방향성)",dual:"4채널 이중TI",selMode:"(β) 선택성",huangMode:"(β) Huang",tmMode:"시분할",tmSlots:"최대 슬롯 수",tmElec:"전극 예산",tmFloor:"강도 유지율",tmHint:"전극은 슬롯 간 재사용됩니다(예산 < 4×슬롯 가능). 강도 유지율이 높을수록 시분할 이점이 커지는 영역입니다.",pmaxLabel:"Pmax — 초점 ↔ 강도",pmaxHint:"낮을수록 초점(강도↓) · 높을수록 강도(=HD-TES 융합). off 변조파워 상한.",dualfreq:"이중 TI 주파수 (Hz)",kLabel:"사용할 전극 개수 (K)",kHint:"K개 전극을 두 반송파에 자유 분산. 방향(축)은 표적서 자동, 간섭으로 방향 선택성 극대화.",elec:"사용가능 전극",selected:"선택",elecHint:"3D에서 전극 클릭=선택 · 드래그=회전",selAll:"전체 선택",deselAll:"모두 해제",presets:"내 프리셋",savePreset:"＋ 저장",presetHint:"선택 조합을 저장해 재사용",weights:"지표 가중치 (최적안 선택)",wM1:"M1 세기",wM2:"M2 초점",wM3:"M3 누출↓",pctl:"M3 등백분위 p",freq:"반송파 주파수",run:"계산",reset:"↺ 초기화",saveResult:"결과 저장",needElec:"먼저 자극할 전극을 3D에서 선택하세요 (최소 4개).",coordHint:"표적 좌표(mm)·반경. 근사값이니 필요시 조정하세요.",strong:"강",weak:"약",fmField:"필드",fmAf:"활성화함수",fmVec:"벡터·파형",
+const T={ko:{dOk:"확인",dCancel:"취소",mEnv:"엔벨로프 형성",mEnvHint:"두 반송파는 각각 너무 빨라 뉴런이 못 따라갑니다. 뉴런이 느끼는 것은 둘의 간섭이 만드는 <b>포락선</b>(금색)이고, 그 진폭이 곧 자극량 Tmax 입니다.",lgC1:"반송파 f₁",lgC2:"반송파 f₂",lgSum:"간섭 합",lgEnv:"엔벨로프 (= 자극량)",envAt:"표적 중심에서",vBest:"최적 몽타주",vSlots:"슬롯",vElec:"전극",vCopy:"표 복사",vCopied:"복사됨",vDelta:"#1 대비",elListOpen:"전극 목록에서 선택 (키보드)",elListLocked:"결과 표시 중에는 잠깁니다 — ↺ 초기화 후 다시 선택하세요.",viewerAria:"3D 두부 모형 · 전극 {n}개 선택됨. 전극 선택은 왼쪽 «전극 목록에서 선택» 을 쓰세요.",target:"표적",mode:"자극 모드",gevd:"분산 자극 (방향성)",dual:"4채널 이중TI",selMode:"(β) 선택성",huangMode:"(β) Huang",tmMode:"시분할",tmSlots:"최대 슬롯 수",tmElec:"전극 예산",tmFloor:"강도 유지율",tmHint:"전극은 슬롯 간 재사용됩니다(예산 < 4×슬롯 가능). 강도 유지율이 높을수록 시분할 이점이 커지는 영역입니다.",pmaxLabel:"Pmax — 초점 ↔ 강도",pmaxHint:"낮을수록 초점(강도↓) · 높을수록 강도(=HD-TES 융합). off 변조파워 상한.",dualfreq:"이중 TI 주파수 (Hz)",kLabel:"사용할 전극 개수 (K)",kHint:"K개 전극을 두 반송파에 자유 분산. 방향(축)은 표적서 자동, 간섭으로 방향 선택성 극대화.",elec:"사용가능 전극",selected:"선택",elecHint:"3D에서 전극 클릭=선택 · 드래그=회전",selAll:"전체 선택",deselAll:"모두 해제",presets:"내 프리셋",savePreset:"＋ 저장",presetHint:"선택 조합을 저장해 재사용",weights:"지표 가중치 (최적안 선택)",wM1:"M1 세기",wM2:"M2 초점",wM3:"M3 누출↓",pctl:"M3 등백분위 p",freq:"반송파 주파수",run:"계산",reset:"↺ 초기화",saveResult:"결과 저장",needElec:"먼저 자극할 전극을 3D에서 선택하세요 (최소 4개).",coordHint:"표적 좌표(mm)·반경. 근사값이니 필요시 조정하세요.",strong:"강",weak:"약",fmField:"필드",fmAf:"활성화함수",fmVec:"벡터·파형",
   m1u:"표적 세기 (V/m)",m2u:"초점 정확도 ↑",m3u:"누출 % ↓",wpu:"종합 점수",mTop:"상위 조합",mTopSub:"가중치 기준 상위 5 — 클릭해서 보기",mDetail:"상세 분석",mHist:"누적 분포",mHistSub:"각 세기 이상으로 자극된 부피 비율 (표적 vs 비표적)",mMontage:"자극 설정 (전극·전류)",mMontageSub:"전극 위치와 전류 (빨강=채널1 f₁, 파랑=채널2 f₂, 극성은 +/−) · 자극기에 넣을 설정",mPareto:"트레이드오프 지도",mParetoSub:"세기↔초점↔누출의 최적 균형점들 (하나를 개선하면 다른 게 나빠지는 경계)",emptyState:"표적·전극·모드를 고르고 계산을 누르세요.",
   m1t:"표적 내부 자극 세기의 중앙값 (TI 변조 엔벨로프, V/m). 높을수록 강하게 자극.",m2t:"표적 대 비표적 세기의 비 (RMS²). 높을수록 초점이 좁고 정확.",m3t:"표적보다 강하게 자극된 비표적 부피의 비율(%). 낮을수록 누출이 적음.",wpt:"M1·M2·M3를 가중치로 합친 종합 점수. 슬라이더로 조정.",
   sVol:"표적 부피",sDepth:"표적 깊이",sCenter:"표적 중심",sMed:"세기 중앙값",sRange:"세기 범위",sMax:"세기 최대",sPeak:"엔벨로프 피크",sIn:"표적 내",sOut:"표적 밖",sOff:"비표적 최대",sHfT:"HF peak(표적)",sHfO:"HF peak(off)",vox:"복셀",secs:"초",
@@ -224,8 +514,8 @@ const T={ko:{target:"표적",mode:"자극 모드",gevd:"분산 자극 (방향성
   wsecField:"필드 드라이브 (E) — 두 반송파 → 간섭 → 엔벨로프 · 축별 (★=최적)",
   wsecAf:"활성화함수 드라이브 (∂E/∂s) — 축별 (★=최적)",
  st_준비:"준비",st_정밀화:"정밀화",st_몽타주사전계산:"몽타주 사전계산",st_비율폴리싱:"비율 폴리싱","st_필드·AF사전계산":"필드·AF 사전계산",st_전수탐색:"전수탐색",st_NSGA진화:"NSGA 진화",st_GEVD:"GEVD",st_분산최적화:"분산 최적화",st_이중TI최적화:"이중 TI 최적화",st_선택성최적화:"선택성 최적화",st_필드계산:"필드 계산",st_완료:"완료"},
- en:{target:"Target",mode:"Stimulation mode",gevd:"Distributed (dir.)",dual:"4ch Dual TI",selMode:"(β) Selective",huangMode:"(β) Huang",tmMode:"Time-mux",tmSlots:"Max slots",tmElec:"Electrode budget",tmFloor:"Strength floor",tmHint:"Electrodes are reused across slots (budget can be < 4×slots). Higher strength floor = regime where time-mux gains appear.",pmaxLabel:"Pmax — focal ↔ intense",pmaxHint:"Lower=focal (weaker) · higher=intense (=HD-TES fusion). Off-target modulation power cap.",dualfreq:"Dual TI frequencies (Hz)",kLabel:"Number of electrodes (K)",kHint:"K electrodes freely split across two carriers. Axis auto from target; interference maximizes directional selectivity.",elec:"Available electrodes",selected:"selected",elecHint:"Click electrodes in 3D · drag to rotate",selAll:"Select all",deselAll:"Clear",presets:"My presets",savePreset:"＋ Save",presetHint:"Save electrode sets to reuse",weights:"Metric weights (best pick)",wM1:"M1 strength",wM2:"M2 focality",wM3:"M3 leakage↓",pctl:"M3 isopercentile p",freq:"Carrier frequency",run:"Compute",reset:"↺ Reset",saveResult:"Save result",needElec:"Select electrodes in the 3D view first (at least 4).",coordHint:"Target coords(mm)·radius. Approximate — adjust if needed.",strong:"hi",weak:"lo",fmField:"Field",fmAf:"Activating fn",fmVec:"Vectors & waves",
-  m1u:"target strength (V/m)",m2u:"focality ↑",m3u:"leakage % ↓",wpu:"overall score",mTop:"Top combos",mTopSub:"Top 5 by weights — click to view",mDetail:"Detailed analysis",mHist:"Cumulative distribution",mHistSub:"Volume fraction above each level (target vs off-target)",mMontage:"Stimulation setup (electrodes·currents)",mMontageSub:"Electrode positions and currents (red=channel 1 f₁, blue=channel 2 f₂, polarity by +/−) · stimulator settings",mPareto:"Trade-off map",mParetoSub:"Best balance points of strength↔focality↔leakage (improving one worsens another)",emptyState:"Pick target·electrodes·mode, then Compute.",
+ en:{dOk:"OK",dCancel:"Cancel",mEnv:"Envelope formation",mEnvHint:"Each carrier alone is far too fast for a neuron to follow. What the neuron feels is the <b>envelope</b> (gold) formed by their interference, and its amplitude is the stimulation Tmax.",lgC1:"carrier f₁",lgC2:"carrier f₂",lgSum:"interference sum",lgEnv:"envelope (= stimulation)",envAt:"at target centre",vBest:"Best montage",vSlots:" slots",vElec:" electrodes",vCopy:"Copy table",vCopied:"Copied",vDelta:"vs #1",elListOpen:"Select from electrode list (keyboard)",elListLocked:"Locked while results are shown — press ↺ Reset to select again.",viewerAria:"3D head model · {n} electrodes selected. Use “Select from electrode list” on the left to change the selection.",target:"Target",mode:"Stimulation mode",gevd:"Distributed (dir.)",dual:"4ch Dual TI",selMode:"(β) Selective",huangMode:"(β) Huang",tmMode:"Time-mux",tmSlots:"Max slots",tmElec:"Electrode budget",tmFloor:"Strength floor",tmHint:"Electrodes are reused across slots (budget can be < 4×slots). Higher strength floor = regime where time-mux gains appear.",pmaxLabel:"Pmax — focal ↔ intense",pmaxHint:"Lower=focal (weaker) · higher=intense (=HD-TES fusion). Off-target modulation power cap.",dualfreq:"Dual TI frequencies (Hz)",kLabel:"Number of electrodes (K)",kHint:"K electrodes freely split across two carriers. Axis auto from target; interference maximizes directional selectivity.",elec:"Available electrodes",selected:"selected",elecHint:"Click electrodes in 3D · drag to rotate",selAll:"Select all",deselAll:"Clear",presets:"My presets",savePreset:"＋ Save",presetHint:"Save electrode sets to reuse",weights:"Metric weights (best pick)",wM1:"M1 strength",wM2:"M2 focality",wM3:"M3 leakage↓",pctl:"M3 isopercentile p",freq:"Carrier frequency",run:"Compute",reset:"↺ Reset",saveResult:"Save result",needElec:"Select electrodes in the 3D view first (at least 4).",coordHint:"Target coords(mm)·radius. Approximate — adjust if needed.",strong:"hi",weak:"lo",fmField:"Field",fmAf:"Activating fn",fmVec:"Vectors & waves",
+  m1u:"target strength (V/m)",m2u:"focality ↑",m3u:"leakage % ↓",wpu:"overall score",mTop:"Top combinations",mTopSub:"Top 5 by weights — click to view",mDetail:"Detailed analysis",mHist:"Cumulative distribution",mHistSub:"Volume fraction above each level (target vs off-target)",mMontage:"Stimulation setup (electrodes·currents)",mMontageSub:"Electrode positions and currents (red=channel 1 f₁, blue=channel 2 f₂, polarity by +/−) · stimulator settings",mPareto:"Trade-off map",mParetoSub:"Best balance points of strength↔focality↔leakage (improving one worsens another)",emptyState:"Pick target·electrodes·mode, then Compute.",
   m1t:"Median TI modulation-envelope strength inside the target (V/m). Higher = stronger stimulation.",m2t:"Ratio of target vs off-target strength (RMS²). Higher = tighter, more accurate focus.",m3t:"Fraction (%) of off-target volume stimulated stronger than the target. Lower = less leakage.",wpt:"Weighted sum of M1·M2·M3. Adjust with sliders.",
   sVol:"Target volume",sDepth:"Target depth",sCenter:"Target center",sMed:"Strength median",sRange:"Strength range",sMax:"Strength max",sPeak:"Envelope peak",sIn:"in target",sOut:"off target",sOff:"Off-target max",sHfT:"HF peak(target)",sHfO:"HF peak(off)",vox:"vox",secs:"s",
  
@@ -245,8 +535,14 @@ function mlabel(m){ return (LANG==='en'&&METHOD_EN[m])?METHOD_EN[m]:(m||''); }
 function toggleLang(){ LANG=LANG==='ko'?'en':'ko'; localStorage.setItem('ti_lang',LANG); applyLang(); }
 function applyLang(){ document.documentElement.lang=LANG; document.getElementById('langbtn').textContent=LANG==='ko'?'EN':'한국어';
   document.querySelectorAll('[data-i18n]').forEach(el=>el.textContent=t(el.dataset.i18n));
-  document.getElementById('mcM1').title=t('m1t'); document.getElementById('mcM2').title=t('m2t'); document.getElementById('mcM3').title=t('m3t'); document.getElementById('mcM4').title=t('wpt');
-  if(INIT)buildTargets(); if(LAST)renderCore(LAST,true);
+  //  같은 문구를 title(마우스)과 aria-label(키보드·스크린리더) 양쪽에 넣는다 — title 은 포커스로는 안 뜬다
+  [['mcM1','m1t'],['mcM2','m2t'],['mcM3','m3t'],['mcM4','wpt']].forEach(([id,k])=>{
+    const e=document.getElementById(id); e.title=t(k); e.setAttribute('aria-label',t(k)); });
+  if(INIT)buildTargets();
+  //  ★언어만 바뀌었다 — 결과 문구만 다시 그리면 된다. 예전엔 renderCore 를 불러
+  //  점군 색 버퍼 30만 개를 통째로 다시 올렸다.
+  if(LAST)paintResults(LAST);
+  if(ENV_DATA)renderEnvelope();   // 문구만 갱신 — 서버를 다시 부르지 않는다
   if(S4LRES) renderS4L(S4LRES.res, S4LRES.job);   // ★이 줄이 없으면 S4L 패널만 옛 언어로 남는다
   const _sc=document.getElementById('s4lcancel'); if(_sc) _sc.textContent=t2('■ 취소','■ Cancel'); }
 
@@ -257,13 +553,41 @@ let driveArr=null,drivePeak=1,driveTgtPeak=1,driveTgt=null,resolRef='target',_re
 const W=()=>[+w1.value,+w2.value,+w3.value];
 function inferno(x){ x=Math.max(0,Math.min(1,x)); const s=[[0,0,4],[40,11,84],[101,21,110],[159,42,99],[212,72,66],[245,125,21],[250,193,39],[252,255,164]];
   const f=x*7,i=Math.floor(f),r=f-i,a=s[i],b=s[Math.min(i+1,7)]; return [(a[0]+(b[0]-a[0])*r)/255,(a[1]+(b[1]-a[1])*r)/255,(a[2]+(b[2]-a[2])*r)/255]; }
-function viridis(x){ x=Math.max(0,Math.min(1,x)); const s=[[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]];
-  const f=x*4,i=Math.floor(f),r=f-i,a=s[i],b=s[Math.min(i+1,4)]; return [(a[0]+(b[0]-a[0])*r)/255,(a[1]+(b[1]-a[1])*r)/255,(a[2]+(b[2]-a[2])*r)/255]; }
-const VIRIDIS_CSS='linear-gradient(to top,#440154,#414487,#2a788e,#22a884,#7ad151,#fde725)';
 
-async function init(){ INIT=await (await fetch('/api/init')).json(); buildTargets();
+//  ★캔버스(2D)와 three.js 는 CSS 변수를 못 읽는다. 한 번 읽어 PAL·CH 에 담아 쓴다.
+//  ⚠ getPropertyValue 는 값 앞에 공백을 붙이므로 .trim() 이 필수다.
+//  ⚠ 모듈 최상위에서 부르면 스타일이 아직 안 풀렸을 수 있다 — init() 첫 줄에서 부른다.
+let PAL={}, CH=[];
+function readPal(){
+  const cs=getComputedStyle(document.documentElement), g=n=>cs.getPropertyValue(n).trim();
+  PAL={ text:g('--text'), dim:g('--dim'), faint:g('--faint'), border:g('--border'), border2:g('--border2'),
+        surface2:g('--surface2'), accent:g('--accent'), mint:g('--mint'), anode:g('--anode'),
+        good:g('--good'), gold:g('--gold'), onAccent:g('--on-accent'), secAf:g('--sec-af'), secField:g('--sec-field'),
+        elLabelOn:g('--accent-2'), elLabelOff:g('--faint'),
+        //  three.js 는 0~1 실수 색을 쓴다 — 유휴 점군은 예전에 (.15,.17,.22) 로 박혀 있어
+        //  중성 팔레트로 바꾼 뒤에도 혼자 푸른끼가 남았다(hex 스캔에도 안 걸렸다).
+        cloudIdle:(()=>{ const h=(g('--cloud-idle')||'#2b2b2b').slice(1);
+          return [0,2,4].map(k=>parseInt(h.slice(k,k+2),16)/255); })(),
+        warnBg:g('--warn-bg'), warnBd:g('--warn-bd'), warnFg:g('--warn-fg'),
+        errBg:g('--err-bg'), errBd:g('--err-bd'), errFg:g('--err-fg'),
+        pickY:g('--pick-y'), imgBg:g('--img-bg') };
+  //  three.js 는 0xRRGGBB 정수를 받는다 — CSS hex 를 한 번만 변환해 둔다
+  const i3=n=>parseInt((g(n)||'#000000').slice(1),16);
+  PAL.i={ elIdle:i3('--el-idle'), elOff:i3('--el-off'), tgtCloud:i3('--tgt-cloud'), pick:i3('--pick'),
+          accent:i3('--accent'), good:i3('--good'), anode:i3('--anode'), cathode:i3('--cathode') };
+  //  채널 한 벌 — hex 는 3D 메시·채움용, t 는 어두운 배경 위 글자용, int 는 three.js setHex 용.
+  //  예전엔 CHC(메시)·CHL(라벨)·PCOL(프로토콜)·SC(시분할) 네 벌이 같은 채널을 서로 다른
+  //  색으로 칠해서, 3D 에서 빨강인 전극이 프로토콜 표에서는 다른 빨강이었다.
+  CH=[1,2,3,4,5,6].map(i=>{ const hex=g('--ch'+i)||'#ff6b6b';
+    return { hex, t:(g('--ch'+i+'-t')||hex), int:parseInt(hex.slice(1),16) }; });
+}
+//  ⚠ 이름을 chCol 로 둔 이유 — 이 파일엔 프로토콜 채널 객체를 `ch` 로 받는 forEach 가
+//  세 군데 있다. 전역을 `ch` 로 두면 그 안에서 전역이 가려져 조용히 다른 걸 부르게 된다.
+const chCol=i=>CH[(i|0)%(CH.length||1)]||{hex:'#ff6b6b',t:'#ff6b6b',int:0xff6b6b};
+
+async function init(){ readPal(); INIT=await (await fetch('/api/init')).json(); buildTargets();
   document.getElementById('cx').value=INIT.brain_center[0]; document.getElementById('cy').value=INIT.brain_center[1]; document.getElementById('cz').value=INIT.brain_center[2];
-  loadPresets(); init3D(); applyLang(); onTargetChange();
+  loadPresets(); init3D(); buildElecList(); applyLang(); onTargetChange(); rngFillAll();
   document.getElementById('status').textContent=`${INIT.electrodes.length} el · ${INIT.cloud.length} vox`;
   s4lRestore(); }
 // S4L 잡은 브라우저보다 오래 산다(몽타주 약 11분). 새로고침해도 이어서 보이게 한다.
@@ -281,7 +605,17 @@ function onTargetChange(){ const t2=targetObj(); const box=document.getElementBy
   if(t2.kind==='mask'){ box.style.display='none'; }
   else{ box.style.display='block'; const c=t2.center||INIT.brain_center; cx.value=c[0]; cy.value=c[1]; cz.value=c[2]; if(t2.radius)cr.value=t2.radius; }
   updateMarker(); }
-function setMode(m){ MODE=m; document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('on',b.dataset.mode===m));
+//  ←→ 로 탭 이동. role="tab" 을 붙였으면 화살표 이동이 따라와야 한다(WAI-ARIA 탭 패턴).
+document.addEventListener('keydown', e=>{
+  const b=e.target.closest?.('.seg [role="tab"], .fmode [role="tab"]'); if(!b) return;
+  if(e.key!=='ArrowLeft' && e.key!=='ArrowRight') return;
+  const tabs=[...b.parentNode.querySelectorAll('[role="tab"]:not(:disabled)')];
+  const i=tabs.indexOf(b); if(i<0) return;
+  const nx=tabs[(i + (e.key==='ArrowRight'?1:tabs.length-1)) % tabs.length];
+  e.preventDefault(); nx.focus(); nx.click();
+});
+function setMode(m){ MODE=m; document.querySelectorAll('[data-mode]').forEach(b=>{ const on=b.dataset.mode===m;
+    b.classList.toggle('on',on); if(b.getAttribute('role')==='tab') b.setAttribute('aria-selected',on?'true':'false'); });
   document.getElementById('kbox').style.display=m==='gevd'?'block':'none'; document.getElementById('wtgrp').style.display=(m==='gevd'||m==='huang')?'none':'block';
   document.getElementById('huangbox').style.display=m==='gevd'?'block':'none';   // 분산=Huang 백엔드, Pmax 노출
   document.getElementById('tmbox').style.display=m==='timemux'?'block':'none';
@@ -290,37 +624,61 @@ function showDf(){ const d=Math.abs((+f2.value)-(+f1.value)), h=document.getElem
   if(!isFinite(d)){ h.textContent='—'; return; }
   const bad=d<1e-6, warn=d<1||d>0.2*((+f1.value)+(+f2.value))/2;
   h.innerHTML=(LANG==='ko'?'Δf = ':'Δf = ')+d.toFixed(d<10?2:0)+' Hz'+
-    (bad?` <b style="color:#ff9a9a">— ${LANG==='ko'?'맥놀이 없음 · TI 성립 안 함':'no beat · not TI'}</b>`
-        :(warn?` <b style="color:#ffcf8a">— ${LANG==='ko'?'권장 범위 밖':'outside usual range'}</b>`
+    (bad?` <b style="color:${PAL.anode}">— ${LANG==='ko'?'맥놀이 없음 · TI 성립 안 함':'no beat · not TI'}</b>`
+        :(warn?` <b style="color:${PAL.warnFg}">— ${LANG==='ko'?'권장 범위 밖':'outside usual range'}</b>`
               :` <span style="opacity:.7">(${LANG==='ko'?'엔벨로프 주파수':'envelope freq'})</span>`));
-  h.style.color=bad?'#ff9a9a':(warn?'#ffcf8a':'var(--dim)'); }
+  h.style.color=bad?PAL.anode:(warn?PAL.warnFg:'var(--dim)'); }
 function curTargetSpec(){ const t2=targetObj(); if(t2.kind==='mask')return {id:t2.id}; return {kind:'sphere',center:[+cx.value,+cy.value,+cz.value],radius:+cr.value}; }
 function curTargetCenter(){ const t2=targetObj(); if(t2.kind==='mask')return t2.center; return [+cx.value,+cy.value,+cz.value]; }
 
 function init3D(){ const box=document.getElementById('viewer'),w=box.clientWidth,h=box.clientHeight;
+  //  ★three.js 가 없으면 여기부터 전부 죽는다 — 빈 검은 칸 대신 이유를 적는다.
+  if(typeof THREE==='undefined'){
+    box.innerHTML='<div style="display:grid;place-items:center;height:100%;padding:24px;text-align:center;'
+      +'color:var(--dim);font-size:var(--f-md);line-height:1.7">'
+      +'<div><b style="color:var(--err)">3D 뷰어를 불러오지 못했습니다</b><br>'
+      +'<code>gui/vendor/three.min.js</code> 를 읽지 못했습니다. 파일이 있는지 확인하세요.<br>'
+      +'<span style="color:var(--faint)">계산·지표·프로토콜은 3D 없이도 그대로 동작합니다.</span></div></div>';
+    return;
+  }
   scene=new THREE.Scene(); camera=new THREE.PerspectiveCamera(45,w/h,1,4000);
   renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,preserveDrawingBuffer:true}); renderer.setSize(w,h); renderer.setPixelRatio(Math.min(devicePixelRatio,2)); box.appendChild(renderer.domElement);
   labelRenderer=new THREE.CSS2DRenderer(); labelRenderer.setSize(w,h); labelRenderer.domElement.style.cssText='position:absolute;inset:0;pointer-events:none'; box.appendChild(labelRenderer.domElement);
   const c=INIT.cloud,n=c.length; centroid=[0,0,0]; c.forEach(p=>{centroid[0]+=p[0];centroid[1]+=p[1];centroid[2]+=p[2];}); centroid=centroid.map(v=>v/n);
   ptGeo=new THREE.BufferGeometry(); const pos=new Float32Array(n*3),col=new Float32Array(n*3);
-  for(let i=0;i<n;i++){ pos[i*3]=c[i][0]-centroid[0];pos[i*3+1]=c[i][1]-centroid[1];pos[i*3+2]=c[i][2]-centroid[2]; col[i*3]=.15;col[i*3+1]=.17;col[i*3+2]=.22; }
+  for(let i=0;i<n;i++){ pos[i*3]=c[i][0]-centroid[0];pos[i*3+1]=c[i][1]-centroid[1];pos[i*3+2]=c[i][2]-centroid[2]; const ci=PAL.cloudIdle; col[i*3]=ci[0];col[i*3+1]=ci[1];col[i*3+2]=ci[2]; }
   ptGeo.setAttribute('position',new THREE.BufferAttribute(pos,3)); ptGeo.setAttribute('color',new THREE.BufferAttribute(col,3));
   scene.add(new THREE.Points(ptGeo,new THREE.PointsMaterial({size:1.5,vertexColors:true,sizeAttenuation:true,transparent:true,opacity:.4})));
-  INIT.electrodes.forEach(e=>{ const m=new THREE.Mesh(new THREE.SphereGeometry(3.6,14,14),new THREE.MeshBasicMaterial({color:0x39424f}));
+  INIT.electrodes.forEach(e=>{ const m=new THREE.Mesh(new THREE.SphereGeometry(3.6,14,14),new THREE.MeshBasicMaterial({color:PAL.i.elIdle}));
     m.position.set(e.xyz[0]-centroid[0],e.xyz[1]-centroid[1],e.xyz[2]-centroid[2]); m.userData=e.name; scene.add(m); elMeshes[e.name]=m;
     const d=document.createElement('div'); d.className='elabel'; d.textContent=e.name; const lo=new THREE.CSS2DObject(d); m.add(lo); elLabels[e.name]=lo; });
   // 표적 = 초록 점 구름 (반투명·큰점 → 세기(inferno) 위에 겹쳐도 세기가 비쳐 보이고, 초록은 inferno에 없어 구분됨)
   tgtGeo=new THREE.BufferGeometry(); tgtGeo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(3),3));
-  tgtCloud=new THREE.Points(tgtGeo,new THREE.PointsMaterial({color:0x3df08a,size:3.0,sizeAttenuation:true,transparent:true,opacity:0.2,depthWrite:false})); scene.add(tgtCloud);
+  tgtCloud=new THREE.Points(tgtGeo,new THREE.PointsMaterial({color:PAL.i.tgtCloud,size:3.0,sizeAttenuation:true,transparent:true,opacity:0.2,depthWrite:false})); scene.add(tgtCloud);
   // 뇌 앞쪽 화살표 (작게·반대방향·라벨없음) — 전두극(Fp/AF)−후두(O/PO) 전극위치로 전방 계산
   (function(){ const bn={}; INIT.electrodes.forEach(e=>bn[e.name]=e.xyz);
     const avg=ns=>{ let v=[0,0,0],k=0; ns.forEach(n=>{ if(bn[n]){v[0]+=bn[n][0];v[1]+=bn[n][1];v[2]+=bn[n][2];k++;} }); return k?v.map(x=>x/k):null; };
     const fr=avg(['Fp1','Fp2','Fpz','AF7','AF8','AF3','AF4']), bk=avg(['O1','O2','Oz','POz','PO7','PO8']); if(!fr||!bk)return;
     const ant=new THREE.Vector3(fr[0]-bk[0],fr[1]-bk[1],fr[2]-bk[2]).normalize();
     const org=new THREE.Vector3(fr[0]-centroid[0],fr[1]-centroid[1],fr[2]-centroid[2]).addScaledVector(ant,60);
-    scene.add(new THREE.ArrowHelper(ant.clone().negate(),org,26,0x45d39e,9,6)); })();
+    scene.add(new THREE.ArrowHelper(ant.clone().negate(),org,26,PAL.i.good,9,6)); })();
   camera.position.set(0,30,360); controls=new THREE.OrbitControls(camera,renderer.domElement); controls.enableDamping=true;
   raycaster=new THREE.Raycaster(); pointer=new THREE.Vector2();
+  //  ★hover 레이캐스트는 스로틀한다 — 매 프레임 쏘면 3D 가 느려진다(60 ms ≈ 16 fps 로 충분)
+  let hovRT=0, hovLast=null;
+  renderer.domElement.addEventListener('pointermove',e=>{
+    if(!RESULT||FMODE!=='intensity') return;      // 결과가 있을 때만 뜻이 있다
+    const now=performance.now(); if(now-hovRT<60) return; hovRT=now;
+    const b=renderer.domElement.getBoundingClientRect();
+    pointer.x=((e.clientX-b.left)/b.width)*2-1; pointer.y=-((e.clientY-b.top)/b.height)*2+1;
+    raycaster.setFromCamera(pointer,camera);
+    const hit=raycaster.intersectObjects(Object.values(elMeshes));
+    const nm=hit.length?hit[0].object.userData:null;
+    if(nm===hovLast) return; hovLast=nm;
+    highlightElectrode(nm);
+    renderer.domElement.style.cursor = nm?'pointer':'';
+  });
+  renderer.domElement.addEventListener('pointerleave',()=>{ hovLast=null; highlightElectrode(null); });
   renderer.domElement.addEventListener('pointerdown',e=>down={x:e.clientX,y:e.clientY});
   renderer.domElement.addEventListener('pointerup',e=>{ if(!down)return; const mv=Math.hypot(e.clientX-down.x,e.clientY-down.y); down=null; if(mv<5)pick(e); });
   addEventListener('resize',()=>{ const w=box.clientWidth,h=box.clientHeight; camera.aspect=w/h; camera.updateProjectionMatrix(); renderer.setSize(w,h); labelRenderer.setSize(w,h); });
@@ -329,23 +687,252 @@ function init3D(){ const box=document.getElementById('viewer'),w=box.clientWidth
   addEventListener('keydown',e=>{ if((e.key==='Control'||e.key==='Meta')&&FMODE==='efield'&&controls)controls.enableZoom=false; });
   const _rz=()=>{ if(controls)controls.enableZoom=true; }; addEventListener('keyup',e=>{ if(e.key==='Control'||e.key==='Meta')_rz(); }); addEventListener('blur',_rz);
   initGizmo();
-  refreshSel(); (function loop(){ requestAnimationFrame(loop); controls.update();
+  REDUCED=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  refreshSel(); (function loop(ts){ requestAnimationFrame(loop); controls.update();
+    updateArcParticles((ts||0)/1000);
     renderer.render(scene,camera); labelRenderer.render(scene,camera);
-    // 좌측하단 좌표축 gizmo (CAD식) — 같은 캔버스 코너라 여길 드래그해도 뷰가 회전됨
+    // ★우측하단 좌표축 gizmo (CAD식) — 같은 캔버스 코너라 여길 드래그해도 뷰가 회전됨.
+    //  ⚠ 오른쪽에는 컬러바(폭 --cbar-w, 오른쪽에서 --vpad)와 "강/약" 라벨이 세로로 서 있다.
+    //  그 폭을 CSS 토큰에서 읽어 그만큼 더 왼쪽으로 비켜 둔다 — 숫자를 손으로 박으면
+    //  --vpad 나 컬러바 폭을 바꿀 때 조용히 겹친다.
     const sz=Math.round(Math.min(112,box.clientWidth*0.2));
+    const gz=gizmoInset(), gx=Math.max(10, box.clientWidth-sz-gz);
     const d=camera.position.clone().sub(controls.target).normalize();
     gizmoCam.position.copy(d.multiplyScalar(3.8)); gizmoCam.up.copy(camera.up); gizmoCam.lookAt(0,0,0);
-    renderer.autoClear=false; renderer.setViewport(10,10,sz,sz); renderer.setScissor(10,10,sz,sz); renderer.setScissorTest(true);
+    renderer.autoClear=false; renderer.setViewport(gx,10,sz,sz); renderer.setScissor(gx,10,sz,sz); renderer.setScissorTest(true);
     renderer.clearDepth(); renderer.render(gizmoScene,gizmoCam);
     renderer.setScissorTest(false); renderer.autoClear=true; renderer.setViewport(0,0,box.clientWidth,box.clientHeight);
   })(); }
+//  컬러바가 차지하는 오른쪽 폭. 라벨("강"/"약")은 컬러바 왼쪽에 붙으므로 그 글자 폭까지 센다.
+//  ⚠ 컬러바가 숨겨져 있어도 같은 자리를 비워 둔다 — 계산 전후로 gizmo 가 움직이면 산만하다.
+function gizmoInset(){
+  const cs=getComputedStyle(document.documentElement), px=n=>parseFloat(cs.getPropertyValue(n))||0;
+  const lab=document.getElementById('cbarHi');
+  const labW=lab?Math.ceil(lab.getBoundingClientRect().width)||16:16;
+  return px('--vpad') + px('--cbar-w') + px('--s1') + labW + 8;   // 8px 여유
+}
 function initGizmo(){ gizmoScene=new THREE.Scene(); gizmoCam=new THREE.PerspectiveCamera(50,1,0.1,100);
   const ax=(v,c,t)=>{ gizmoScene.add(new THREE.ArrowHelper(v,new THREE.Vector3(0,0,0),1,c,0.32,0.2));
     const cv=document.createElement('canvas'); cv.width=cv.height=64; const g=cv.getContext('2d');
     g.font='bold 46px ui-monospace'; g.fillStyle='#'+c.toString(16).padStart(6,'0'); g.textAlign='center'; g.textBaseline='middle'; g.fillText(t,32,36);
     const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),depthTest:false,transparent:true}));
     sp.position.copy(v).multiplyScalar(1.34); sp.scale.set(0.5,0.5,1); gizmoScene.add(sp); };
-  ax(new THREE.Vector3(1,0,0),0xff6b6b,'X'); ax(new THREE.Vector3(0,1,0),0x45d39e,'Y'); ax(new THREE.Vector3(0,0,1),0x5b9bff,'Z'); }
+  ax(new THREE.Vector3(1,0,0),PAL.i.anode,'X'); ax(new THREE.Vector3(0,1,0),PAL.i.good,'Y'); ax(new THREE.Vector3(0,0,1),PAL.i.cathode,'Z'); }
+//  ══ 전류 경로 ════════════════════════════════════════════════════════════
+//  TI 는 두 채널의 전류 간섭이 본질인데, 지금 화면은 어느 전극이 어느 짝인지 색으로만
+//  알려준다. 채널의 +/− 를 잇는 아크를 그려 **짝과 극성**을 눈에 보이게 한다.
+//  이것이 이 도구에서 모션이 실제로 정보를 전달하는 유일한 자리다 — 입자가 + 에서 − 로
+//  흐르는 것 자체가 극성이다. 그 밖의 장식 모션은 넣지 않는다.
+//
+//  성능 규칙 셋:
+//   · 아크·입자는 **한 번 만들고 visible 토글**. hover 마다 지오메트리를 만들면 GC 가 튄다
+//   · 입자 갱신은 **보일 때만** 한다
+//   · hover 레이캐스트는 throttle (매 프레임 레이캐스트는 낭비)
+let ARCS=[], ARC_ROOT=null, HOVER_SEL=null, PREVIEW=null, REDUCED=false;
+const PARTS_PER_ARC=7;
+//  분산 몽타주는 한 채널의 +와 − 조합이 수십 개가 될 수 있다. 전부 그리면 화면이
+//  뭉개지고 프레임이 떨어진다 — 전류가 센 순서로 이만큼만 그리고, 버린 개수는 뷰어에 적는다.
+const ARC_MAX_PER_CH=18;
+
+function clearArcs(){
+  if(!ARC_ROOT) return;
+  ARC_ROOT.children.slice().forEach(o=>{ ARC_ROOT.remove(o);
+    if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); });
+  ARCS=[];
+}
+//  결과의 채널 구성에서 아크를 만든다. 제어점은 두 전극 중점을 머리 바깥으로 밀어
+//  뇌 점군을 관통하지 않게 한다(중심에서 멀어지는 방향).
+let TGT_C=null;      // 표적 중심(장면 좌표 = 모델좌표 − centroid)
+function buildArcs(r){
+  if(!scene) return;
+  const c=r&&r.target_info&&r.target_info.center;
+  TGT_C = c ? new THREE.Vector3(c[0]-centroid[0], c[1]-centroid[1], c[2]-centroid[2]) : null;
+  if(!ARC_ROOT){ ARC_ROOT=new THREE.Group(); scene.add(ARC_ROOT); }
+  clearArcs();
+  const chs=(r&&r.protocol&&r.protocol.channels)||[]; if(!chs.length) return;
+
+  //  ★기법마다 채널 구조가 다르다 — 실제로 돌려 확인한 것:
+  //    classic  채널 2 · 쌍 1/1            시분할  채널 4 · 각 1쌍 · slot·duty 있음
+  //    이중TI   채널 4 · 쌍 1 씩            분산     채널 2 · **한 채널에 3×3=9쌍**
+  //  분산처럼 전극이 많은 채널은 +와 − 의 모든 조합이 경로다. 전부 같은 굵기로 그리면
+  //  약한 경로가 센 경로를 덮으므로 **전류 크기로 가중**해 진하기를 정한다.
+  //  ⚠ 색은 결과 패널과 같아야 한다 — 시분할은 표·타임라인이 **슬롯**으로 칠하므로
+  //  아크도 슬롯 색을 쓴다(채널 인덱스로 칠하면 표와 어긋난다).
+  let made=0, dropped=0;
+  chs.forEach((c,ci)=>{
+    const cur=c.currents_mA||{};
+    const pos=Object.entries(cur).filter(([,I])=>I>=0);
+    const neg=Object.entries(cur).filter(([,I])=>I<0);
+    const slot=c.slot;                       // 시분할에만 있다(1-based)
+    const colIdx = (slot!=null) ? (slot-1) : ci;
+    const col=new THREE.Color(chCol(colIdx).int);
+
+    //  쌍마다 흐를 수 있는 전류의 대리값 = min(|I+|,|I−|)
+    let pairs=[];
+    pos.forEach(([a,ia])=>neg.forEach(([b,ib])=>{
+      if(!elMeshes[a]||!elMeshes[b]) return;
+      pairs.push({a,b,w:Math.min(Math.abs(ia),Math.abs(ib))});
+    }));
+    if(!pairs.length) return;
+    const wmax=Math.max(...pairs.map(x=>x.w))||1;
+    pairs.forEach(x=>x.w/=wmax);
+    //  아주 약한 경로는 그리지 않는다(분산에서 수십 개가 겹쳐 화면이 뭉갠다).
+    //  버린 개수를 세어 뷰어에 적는다 — 조용히 자르지 않는다.
+    const kept=pairs.filter(x=>x.w>=0.12).sort((u,v)=>v.w-u.w).slice(0,ARC_MAX_PER_CH);
+    dropped += pairs.length-kept.length;
+
+    kept.forEach(({a,b,w})=>{
+      const A=elMeshes[a].position, B=elMeshes[b].position;
+      //  ★경로는 **표적을 지나야 한다**. 예전엔 중점을 머리 바깥으로 밀어서 전류가
+      //  두피 위를 도는 것처럼 보였고, 가까운 전극 쌍일수록 크게 튀어나갔다.
+      //
+      //  3차 베지에는 t=0.5 에서 (A + 3P₁ + 3P₂ + B)/8 을 지난다. 그 점이 표적 T 가 되려면
+      //      P₁ + P₂ = (8T − A − B)/3
+      //  제어점을 각 전극→표적 직선 위에 두면 P₁ = A + s(T−A), P₂ = B + s(T−B) 이고,
+      //  대입하면 s(2T−A−B) = 4(2T−A−B)/3 ⇒ **s = 4/3** — 기하와 무관한 상수다.
+      //
+      //  2차로도 P = 2T − (A+B)/2 로 통과시킬 수 있지만, 중점이 표적 반대편에 있는 쌍은
+      //  P 가 머리 밖까지 나가 클램프에 걸렸다(실측: 분산 10.3 mm · 이중TI 9.3 mm 빗나감).
+      //  3차는 제어점이 전극–표적 선 위라 항상 머리 안에 있고(실측 40~74 mm), 클램프가
+      //  필요 없으며 전 조합에서 미스가 0.00 mm 다.
+      let curve;
+      if(TGT_C){
+        const s=4/3;
+        const P1=A.clone().lerp(TGT_C, s), P2=B.clone().lerp(TGT_C, s);
+        curve=new THREE.CubicBezierCurve3(A.clone(), P1, P2, B.clone());
+      } else {
+        //  표적을 모르면 안쪽으로 완만히 (바깥 아님)
+        const mid=A.clone().add(B).multiplyScalar(0.5);
+        curve=new THREE.QuadraticBezierCurve3(A.clone(), mid.multiplyScalar(0.35), B.clone());
+      }
+      const line=new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(curve.getPoints(48)),
+        new THREE.LineBasicMaterial({color:col,transparent:true,opacity:.85,depthTest:false}));
+      line.renderOrder=2; line.visible=false; ARC_ROOT.add(line);
+      const np=Math.max(3,Math.round(PARTS_PER_ARC*w));
+      const pg=new THREE.BufferGeometry();
+      pg.setAttribute('position',new THREE.BufferAttribute(new Float32Array(np*3),3));
+      const pts=new THREE.Points(pg,new THREE.PointsMaterial(
+        {color:col,size:3.2+2.6*w,sizeAttenuation:true,transparent:true,opacity:.95,depthTest:false}));
+      pts.renderOrder=3; pts.visible=false; ARC_ROOT.add(pts);
+      //  from/to 를 적어 둔다 — 입자는 반드시 + → − 로 흐른다(극성이 곧 정보다)
+      ARCS.push({ch:ci, slot:slot||null, from:a, to:b, w, np, curve, line, pts, geo:pg});
+      made++;
+    });
+  });
+  ARC_DROPPED=dropped;
+}
+
+//  ── 무엇을 보일지 ────────────────────────────────────────────────────────
+//  전극에 마우스를 올리면 **모든 경로**가 나온다(사용자 요청). 그 전극에 닿는 경로만
+//  진하게 하고 나머지는 옅게 남겨, 전체 그림을 보면서도 그 전극의 몫이 구별된다.
+//    null        → 전부 숨김
+//    {all:true}  → 전부 표시, 균등
+//    {el:이름}   → 전부 표시, 그 전극에 닿는 것 강조
+//    {ch:인덱스} → 전부 표시, 그 채널 강조 (프로토콜 표 행 hover)
+let ARC_DROPPED=0;
+function showArcs(sel){
+  HOVER_SEL = sel || null;
+  const emph = a => !sel ? false
+    : (sel.all ? true
+    : (sel.el!=null ? (a.from===sel.el || a.to===sel.el)
+    : (sel.ch!=null ? a.ch===sel.ch : true)));
+  ARCS.forEach(a=>{
+    const on = !!sel;
+    const e  = emph(a);
+    a.line.visible = on;
+    a.line.material.opacity = e ? (0.45+0.5*a.w) : 0.16;
+    a.pts.visible  = on && e && !REDUCED;   // 모션 감소: 아크는 남기고 입자만 멈춘다
+  });
+}
+function updateArcParticles(tsec){
+  if(!HOVER_SEL || REDUCED) return;
+  for(const a of ARCS){
+    if(!a.pts.visible) continue;
+    const arr=a.geo.attributes.position.array;
+    for(let i=0;i<a.np;i++){
+      const u=((tsec*0.35)+i/a.np)%1;               // + → −  (curve 는 from→to 로 만들었다)
+      const p=a.curve.getPointAt(u);
+      arr[i*3]=p.x; arr[i*3+1]=p.y; arr[i*3+2]=p.z;
+    }
+    a.geo.attributes.position.needsUpdate=true;
+  }
+}
+//  전극 이름 → 그 전극이 속한 채널. 결과가 있을 때만 뜻이 있다.
+//  ★hover 와 focus 에 **같은** 강조를 건다. hover 전용이면 지침 위반이고, 실제로
+//  키보드 사용자에게는 이 기능이 아예 없는 것과 같다. 위임이라 표를 다시 그려도 산다.
+['pointerover','focusin'].forEach(ev=>document.addEventListener(ev, e=>{
+  const tr=e.target.closest?.('tr.prow-hl'); if(!tr) return;
+  highlightChannel(+tr.dataset.ch);
+}));
+['pointerout','focusout'].forEach(ev=>document.addEventListener(ev, e=>{
+  const tr=e.target.closest?.('tr.prow-hl'); if(!tr) return;
+  if(ev==='pointerout' && tr.contains(e.relatedTarget)) return;
+  highlightChannel(null);
+}));
+//  상위 5 항목 — 클릭 전에 3D 에서 미리 비교할 수 있게 그 몽타주의 전극을 밝힌다
+['pointerover','focusin'].forEach(ev=>document.addEventListener(ev, e=>{
+  const it=e.target.closest?.('.topitem[data-els]'); if(!it) return;
+  previewMontage(it.dataset.els.split(','));
+}));
+['pointerout','focusout'].forEach(ev=>document.addEventListener(ev, e=>{
+  const it=e.target.closest?.('.topitem[data-els]'); if(!it) return;
+  if(ev==='pointerout' && it.contains(e.relatedTarget)) return;
+  previewMontage(null);
+}));
+
+//  ── 연동 강조 ──────────────────────────────────────────────────────────
+//  표·목록·3D 어디에 hover 하든 같은 강조가 걸린다. **focus 에도** 같은 규칙을 건다 —
+//  hover 전용이면 키보드 사용자에게는 이 기능이 없는 것이나 같다.
+//  ★전극 hover = **모든 전류 경로**를 띄운다(그 전극 것만이 아니라).
+//  그 전극에 닿는 경로만 진하게 하고 나머지는 옅게 남겨, 전체 흐름을 보면서도
+//  이 전극이 어디에 관여하는지 구별된다. 전극 자체는 흐리게 하지 않는다 —
+//  모든 경로가 보이는데 일부 전극만 죽이면 그림이 서로 어긋난다.
+function highlightElectrode(nm){
+  if(!LAST||!LAST.used) return;
+  showArcs(nm ? {el:nm} : null);
+  for(const e in elMeshes){
+    const m=elMeshes[e], u=LAST.used[e]; if(!u) continue;
+    const me = (nm===e);
+    m.material.transparent = !!nm && !me;
+    m.material.opacity = (!nm || me) ? 1 : 0.7;
+    if(elLabels[e]) elLabels[e].element.style.opacity = (!nm || me) ? '1' : '0.55';
+  }
+  hudArcs(nm ? 'el' : null);
+}
+//  프로토콜 표 행·목록에서 부를 때 — 역시 전부 띄우고 그 채널만 강조한다
+function highlightChannel(ci){
+  if(!LAST||!LAST.used) return;
+  showArcs(ci===null ? null : {ch:ci});
+  for(const e in elMeshes){ const m=elMeshes[e];
+    m.material.transparent=false; m.material.opacity=1;
+    if(elLabels[e]) elLabels[e].element.style.opacity='1'; }
+  hudArcs(ci===null ? null : 'ch');
+}
+//  ★조용히 자르지 않는다 — 약해서 뺀 경로가 있으면 화면에 적는다
+function hudArcs(kind){
+  const el=document.getElementById('archud'); if(!el) return;
+  if(!kind){ el.style.display='none'; return; }
+  el.style.display='block';
+  el.innerHTML = (LANG==='ko'
+      ? `전류 경로 ${ARCS.length}개 · 입자는 +에서 −로`
+      : `${ARCS.length} current paths · particles flow + → −`)
+    + (ARC_DROPPED ? (LANG==='ko'
+        ? ` · 약한 경로 ${ARC_DROPPED}개 생략`
+        : ` · ${ARC_DROPPED} weak paths omitted`) : '');
+}
+function previewMontage(list){
+  //  상위 5 항목 hover — 아직 고르지 않은 몽타주의 전극을 미리 밝힌다(클릭 전 비교)
+  PREVIEW=list;
+  for(const nm in elMeshes){
+    if(!list){ elMeshes[nm].material.opacity=1; elMeshes[nm].material.transparent=false; continue; }
+    const on=list.includes(nm);
+    elMeshes[nm].material.opacity=on?1:0.2; elMeshes[nm].material.transparent=!on;
+    elMeshes[nm].scale.setScalar(on?1.35:0.7);
+  }
+  if(!list && LAST) paintField(LAST);   // 원래 크기·색으로 되돌린다
+}
+
 function pick(e){ const b=renderer.domElement.getBoundingClientRect(); pointer.x=((e.clientX-b.left)/b.width)*2-1; pointer.y=-((e.clientY-b.top)/b.height)*2+1;
   raycaster.setFromCamera(pointer,camera);
   if(FMODE==='efield'){ if(efPts&&efData){ raycaster.params.Points.threshold=4.5; const h=raycaster.intersectObject(efPts);
@@ -379,7 +966,27 @@ function renderAF(d){ const af=d.af,mx=d.afmax||Math.max(...af)||1,col=ptGeo.att
 function setDrive(arr,tgt){ driveArr=arr; driveTgt=tgt||null; drivePeak=0; driveTgtPeak=0;
   for(let i=0;i<arr.length;i++){ if(arr[i]>drivePeak)drivePeak=arr[i]; if(tgt&&tgt[i]&&arr[i]>driveTgtPeak)driveTgtPeak=arr[i]; }
   if(!drivePeak)drivePeak=1; if(!driveTgtPeak)driveTgtPeak=drivePeak; }
-function resolPreset(v){ document.getElementById('resolSl').value=v; resolCompute(); }
+// ★슬라이더 채움(Chromium 용 --p). Firefox 는 ::-moz-range-progress 로 공짜다.
+//   ⚠ .value 를 JS 로 바꿔도 input 이벤트는 안 뜬다 — resetAll·resolPreset·init 에서 직접 부를 것.
+function rngFill(el){ const a=+el.min||0, b=(el.max===''?100:+el.max);
+  //  스크린리더는 기본으로 원시 숫자만 읽는다 — 라벨을 붙여 무슨 값인지 알리게 한다
+  //  라벨을 찾는 순서: 감싼 .wt 의 <label> → aria-labelledby 가 가리키는 요소.
+  //  둘 다 없으면 원시 숫자만 읽히므로 슬라이더를 추가할 땐 한쪽을 반드시 붙일 것.
+  const by=el.getAttribute('aria-labelledby');
+  const lb=el.closest('.wt')?.querySelector('label')?.textContent
+        || (by?document.getElementById(by)?.textContent:'') || '';
+  el.setAttribute('aria-valuetext', (lb?lb+' ':'')+el.value);
+  el.style.setProperty('--p', (100*((+el.value)-a)/((b-a)||1)).toFixed(1)+'%'); }
+function rngFillAll(){ document.querySelectorAll('input[type=range]').forEach(rngFill); }
+document.addEventListener('input', e=>{ if(e.target.matches('input[type=range]')) rngFill(e.target); });
+// 커스텀 증감 버튼. stepUp/stepDown 이 min·max·step 을 알아서 지키므로 클램프를 다시 짜지 않는다.
+//   ⚠ input 이벤트를 재발행해야 기존 oninput 핸들러가 계속 동작한다.
+document.addEventListener('click', e=>{ const b=e.target.closest('.stp'); if(!b) return;
+  const i=b.parentNode.querySelector('input'); if(!i) return;
+  (+b.dataset.d>0)? i.stepUp() : i.stepDown();
+  i.dispatchEvent(new Event('input',{bubbles:true})); });
+
+function resolPreset(v){ const el=document.getElementById('resolSl'); el.value=v; rngFill(el); resolCompute(); }
 function resolSetRef(r){ resolRef=r; document.getElementById('refT').classList.toggle('on',r==='target'); document.getElementById('refM').classList.toggle('on',r==='max'); resolCompute(); }
 function resolCompute(){ if(!driveArr||!ptGeo)return; const frac=+document.getElementById('resolSl').value/100;
   document.getElementById('resolPct').textContent=Math.round(frac*100)+'%';
@@ -395,12 +1002,12 @@ async function fetchResol(){ if(!LAST)return; const frac=+document.getElementByI
       body:JSON.stringify({montage:LAST.best,target:curTargetSpec(),mode:(FMODE==='af'?'af':'field'),ref:resolRef,frac})})).json();
     if(d.error){ out.innerHTML='<span style="color:var(--dim)">'+d.error+'</span>'; return; }
     const vstr=d.Vact>=1000?(d.Vact/1000).toFixed(2)+' cm³':Math.round(d.Vact)+' mm³';
-    out.innerHTML=`${LANG==='ko'?'활성부피':'vol'} <b>${vstr}</b> · ${LANG==='ko'?'유효지름':'diam'} <b style="color:#ffd76a">${d.diam.toFixed(1)} mm</b> · ${LANG==='ko'?'표적커버리지':'cov'} <b>${d.coverage.toFixed(0)}%</b> · ${LANG==='ko'?'정밀도(표적내)':'prec'} <b>${d.precision.toFixed(0)}%</b>`;
+    out.innerHTML=`${LANG==='ko'?'활성부피':'vol'} <b>${vstr}</b> · ${LANG==='ko'?'유효지름':'diam'} <b style="color:${PAL.gold}">${d.diam.toFixed(1)} mm</b> · ${LANG==='ko'?'표적커버리지':'cov'} <b>${d.coverage.toFixed(0)}%</b> · ${LANG==='ko'?'정밀도(표적내)':'prec'} <b>${d.precision.toFixed(0)}%</b>`;
   }catch(e){ out.innerHTML='<span style="color:var(--dim)">'+t2('계산 실패','failed')+'</span>'; } }
 function dimCloud(on){ if(!ptGeo)return; const col=ptGeo.attributes.color.array; if(on){ for(let i=0;i<col.length;i+=3){ col[i]=.08;col[i+1]=.09;col[i+2]=.12; } ptGeo.attributes.color.needsUpdate=true; } }
 function clearEfield(){ [efE1,efE2,efPts].forEach(o=>{ if(o){ scene.remove(o); o.geometry.dispose(); o.material&&o.material.dispose(); } }); efE1=efE2=efPts=null; efData=null; rayHits=[]; if(pickMarker)pickMarker.visible=false; }
 function selectRayPoint(){ if(!rayHits.length||!efData)return; const i=rayHits[rayIdx].index,p=efData.pos[i];
-  if(!pickMarker){ pickMarker=new THREE.Mesh(new THREE.SphereGeometry(2.7,16,16),new THREE.MeshBasicMaterial({color:0xffe066})); scene.add(pickMarker); }
+  if(!pickMarker){ pickMarker=new THREE.Mesh(new THREE.SphereGeometry(2.7,16,16),new THREE.MeshBasicMaterial({color:PAL.i.pick})); scene.add(pickMarker); }
   pickMarker.position.set(p[0]-centroid[0],p[1]-centroid[1],p[2]-centroid[2]); pickMarker.visible=true; pickPoint(i); }
 function stepDepth(d){ if(!rayHits.length)return; rayIdx=Math.max(0,Math.min(rayHits.length-1,rayIdx+d)); selectRayPoint(); }
 async function fetchEfield(){ if(!LAST)return; try{
@@ -432,31 +1039,109 @@ function showPointPanel(pf){ curPF=pf; document.getElementById('fpanel').style.d
   const fe1=pf.e1.map(Math.abs),fe2=pf.e2.map(Math.abs);
   const fopt=pf.axenv.indexOf(Math.max(...pf.axenv)), aopt=(pf.afenv||[0,0,0]).indexOf(Math.max(...(pf.afenv||[0,0,0]))), axn='XYZ';
   document.getElementById('fpDrive').innerHTML=
-    `<span style="color:#ffb48a">${LANG==='ko'?'필드 최적축':'field opt'} ${axn[fopt]}</span> · <span style="color:#8fe6c4">${LANG==='ko'?'AF 최적축':'AF opt'} ${axn[aopt]}</span>`+
-    (fopt!==aopt?` <b style="color:#ffd76a">← ${LANG==='ko'?'다름! 부위별 발화원인 상이':'differ!'}</b>`:` <span style="color:var(--dim)">(${LANG==='ko'?'일치':'same'})</span>`);
+    `<span style="color:${PAL.secField}">${LANG==='ko'?'필드 최적축':'field opt'} ${axn[fopt]}</span> · <span style="color:${PAL.secAf}">${LANG==='ko'?'AF 최적축':'AF opt'} ${axn[aopt]}</span>`+
+    (fopt!==aopt?` <b style="color:${PAL.gold}">← ${LANG==='ko'?'다름! 부위별 발화원인 상이':'differ!'}</b>`:` <span style="color:var(--dim)">(${LANG==='ko'?'일치':'same'})</span>`);
   drawPointGraph(pf,fopt);
   const fg=Math.max(...[0,1,2].map(j=>fe1[j]+fe2[j]),1e-6), ag=Math.max(...[0,1,2].map(j=>(pf.af1?pf.af1[j]+pf.af2[j]:0)),1e-9);
   ['X','Y','Z'].forEach((ax,k)=>{ drawWave('fwave'+ax,fe1[k],fe2[k],pf.axenv[k],ax,k===fopt,fg);
     if(pf.af1)drawWave('afwave'+ax,pf.af1[k],pf.af2[k],pf.afenv[k],ax,k===aopt,ag); }); }
+//  ★두 반송파와 그 맥놀이 포락선. 작은 축별 그림(drawWave)과 결과 패널의 큰 그림
+//  (drawEnvelope)이 **같은 식**을 쓰게 여기 한 곳에 둔다 — 두 그림이 서로 다른 물리를
+//  보이면 어느 쪽을 믿어야 할지 알 수 없게 된다.
+const carrier=(a,F)=>t=>a*Math.cos(2*Math.PI*F*t);
+const beatEnv=(a1,a2,df)=>t=>Math.sqrt(a1*a1+a2*a2+2*a1*a2*Math.cos(2*Math.PI*df*t));
+
 function drawWave(cvId,a1,a2,depth,axname,opt,gmax){ const cv=document.getElementById(cvId),g=cv.getContext('2d'),W=cv.width,H=cv.height,mid=H/2+4;
   g.clearRect(0,0,W,H); const F1=+f1.value,F2=+f2.value,df=Math.abs(F1-F2)||100,Tspan=2/df,N=560,sc=(H/2-8)/(gmax||1e-6),tt=i=>i/(N-1)*Tspan,xt=i=>i/(N-1)*W;
   g.strokeStyle='rgba(255,255,255,.08)'; g.beginPath(); g.moveTo(0,mid); g.lineTo(W,mid); g.stroke();
   const plot=(fn,st,lw)=>{ g.strokeStyle=st; g.lineWidth=lw||1; g.beginPath(); for(let i=0;i<N;i++){ const y=mid-fn(tt(i))*sc; i?g.lineTo(xt(i),y):g.moveTo(xt(i),y); } g.stroke(); };
-  plot(t=>a1*Math.cos(2*Math.PI*F1*t),'rgba(232,86,79,.26)');
-  plot(t=>a2*Math.cos(2*Math.PI*F2*t),'rgba(91,155,255,.26)');
-  plot(t=>a1*Math.cos(2*Math.PI*F1*t)+a2*Math.cos(2*Math.PI*F2*t),'rgba(238,240,246,.86)',1.1);
-  const env=t=>Math.sqrt(a1*a1+a2*a2+2*a1*a2*Math.cos(2*Math.PI*df*t));
-  g.strokeStyle=opt?'#ffe066':'#45d39e'; g.lineWidth=1.6; [1,-1].forEach(s=>{ g.beginPath(); for(let i=0;i<N;i++){ const y=mid-s*env(tt(i))*sc; i?g.lineTo(xt(i),y):g.moveTo(xt(i),y); } g.stroke(); });
-  g.font='bold 10px ui-monospace'; g.fillStyle=opt?'#ffe066':'rgba(232,240,255,.8)';
+  const c1=carrier(a1,F1), c2=carrier(a2,F2);
+  plot(c1,'rgba(232,86,79,.26)');
+  plot(c2,'rgba(91,155,255,.26)');
+  plot(t=>c1(t)+c2(t),'rgba(238,240,246,.86)',1.1);
+  const env=beatEnv(a1,a2,df);
+  g.strokeStyle=opt?PAL.pickY:PAL.good; g.lineWidth=1.6; [1,-1].forEach(s=>{ g.beginPath(); for(let i=0;i<N;i++){ const y=mid-s*env(tt(i))*sc; i?g.lineTo(xt(i),y):g.moveTo(xt(i),y); } g.stroke(); });
+  g.font='bold 10px ui-monospace'; g.fillStyle=opt?PAL.pickY:'rgba(232,240,255,.8)';
   g.fillText(axname+(opt?' ★':'')+`  ${LANG==='ko'?'깊이':'d'} ${(+depth).toFixed(3)}`,3,11); }
+//  ★엔벨로프 형성 — 이 방법의 기전이다. 예전엔 ① 계산을 끝내고 ② 3D 에서 점을 찍고
+//  ③ 그전까지 disabled 였던 세 번째 시야 탭을 눌러야 268×48 px 짜리 축별 그림이 나왔다.
+//  이제 결과가 나오면 **표적 중심에서** 늘 보이게 한다. 값은 서버가 그 좌표에서 실제로
+//  계산한 E₁·E₂ 투영(a1·a2)이다 — 그리기 위해 지어낸 수가 아니다.
+//  ⚠ 애니메이션 없음. 계측 도구에서 흐르는 파형은 신뢰를 깎는다.
+let ENV_LAST=null, envRT=0;
+addEventListener('resize',()=>{ if(!ENV_LAST) return; clearTimeout(envRT); envRT=setTimeout(()=>drawEnvelope(ENV_LAST),150); });
+
+//  표적 중심의 E₁·E₂ 를 서버에서 받아 그린다. /api/pointfield 는 xyz 를 받으므로
+//  복셀 인덱스를 몰라도 된다. 실패하면 패널을 조용히 감춘다 — 빈 축을 보여주면
+//  "값이 0인가" 로 읽힌다.
+async function loadEnvelope(r){
+  const box=document.getElementById('envbox'); if(!box) return;
+  const c=r&&r.target_info&&r.target_info.center;
+  if(!c||!r.best){ box.style.display='none'; return; }
+  try{
+    const d=await (await fetch('/api/pointfield',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({montage:r.best,target:curTargetSpec(),xyz:c})})).json();
+    if(d.error||d.a1==null){ box.style.display='none'; return; }
+    box.style.display='block'; ENV_DATA=d; renderEnvelope();
+  }catch(e){ box.style.display='none'; }
+}
+//  그리기와 문구를 나눠 둔다 — 언어 토글은 이쪽만 다시 부르면 된다(다시 받아오지 않는다)
+let ENV_DATA=null;
+function renderEnvelope(){
+  const d=ENV_DATA; if(!d) return;
+  const F1=+f1.value,F2=+f2.value,df=Math.abs(F1-F2)||100;
+  document.getElementById('envsub').innerHTML=
+    `${t('envAt')} [${(d.pos||[]).join(', ')}] · |E₁| ${d.e1n} · |E₂| ${d.e2n} V/m · `
+    +`Δf ${df} Hz · <b style="color:var(--gold)">Tmax ${d.tmax} V/m</b>`;
+  document.getElementById('envleg').innerHTML=
+    [[ 'rgba(232,86,79,.85)', t('lgC1') ],[ 'rgba(91,155,255,.85)', t('lgC2') ],
+     [ 'var(--text)', t('lgSum') ],[ 'var(--gold)', t('lgEnv') ]]
+    .map(([c,l])=>`<span style="color:${c}"><i></i><span style="color:var(--dim)">${l}</span></span>`).join('');
+  drawEnvelope(d);
+}
+function drawEnvelope(d){
+  ENV_LAST=d;
+  const cv=document.getElementById('envwave'); if(!cv) return;
+  const W=cv.width=cv.clientWidth||520, H=cv.height, g=cv.getContext('2d');
+  g.clearRect(0,0,W,H);
+  const a1=+d.a1, a2=+d.a2, F1=+f1.value, F2=+f2.value, df=Math.abs(F1-F2)||100;
+  const L=42, R=10, TP=10, BT=22, PW=W-L-R, PH=H-TP-BT, mid=TP+PH/2;
+  const Tspan=2/df, N=Math.max(600,Math.floor(PW*2));
+  const amp=Math.max(a1+a2,1e-9), sc=(PH/2-4)/amp;
+  const tt=i=>i/(N-1)*Tspan, xt=i=>L+i/(N-1)*PW, yv=v=>mid-v*sc;
+
+  //  축 — 세로는 V/m, 가로는 맥놀이 주기(1/Δf). 원래 그림엔 눈금이 하나도 없었다.
+  g.strokeStyle=PAL.border; g.lineWidth=1; g.beginPath();
+  g.moveTo(L,TP); g.lineTo(L,TP+PH); g.lineTo(L+PW,TP+PH); g.stroke();
+  g.font='9px ui-monospace'; g.textBaseline='middle'; g.textAlign='right'; g.fillStyle=PAL.faint;
+  [amp,0,-amp].forEach(v=>{ const y=yv(v);
+    if(v!==0){ g.strokeStyle=PAL.border2; g.globalAlpha=.45; g.beginPath(); g.moveTo(L,y); g.lineTo(L+PW,y); g.stroke(); g.globalAlpha=1; }
+    g.fillText(v.toFixed(3),L-4,y); });
+  g.textAlign='center'; g.textBaseline='top';
+  [0,1,2].forEach(k=>{ const x=L+k/2*PW;
+    g.fillStyle=PAL.faint; g.fillText(k===0?'0':(k===1?'1/Δf':'2/Δf'),x,TP+PH+4);
+    if(k){ g.strokeStyle=PAL.border2; g.globalAlpha=.45; g.beginPath(); g.moveTo(x,TP); g.lineTo(x,TP+PH); g.stroke(); g.globalAlpha=1; } });
+
+  const plot=(fn,st,lw)=>{ g.strokeStyle=st; g.lineWidth=lw||1; g.beginPath();
+    for(let i=0;i<N;i++){ const y=yv(fn(tt(i))); i?g.lineTo(xt(i),y):g.moveTo(xt(i),y); } g.stroke(); };
+  const c1=carrier(a1,F1), c2=carrier(a2,F2), env=beatEnv(a1,a2,df);
+  plot(c1,'rgba(232,86,79,.30)');           // 반송파 f₁
+  plot(c2,'rgba(91,155,255,.30)');          // 반송파 f₂
+  plot(t=>c1(t)+c2(t),'rgba(238,240,246,.80)',1.1);   // 간섭 합
+  g.strokeStyle=PAL.gold; g.lineWidth=1.8;            // 포락선 ±  ← 이것이 자극량
+  [1,-1].forEach(sgn=>{ g.beginPath();
+    for(let i=0;i<N;i++){ const y=yv(sgn*env(tt(i))); i?g.lineTo(xt(i),y):g.moveTo(xt(i),y); } g.stroke(); });
+}
+
 function drawPointGraph(pf,opt){ const cv=document.getElementById('fgraph'),g=cv.getContext('2d'),W=cv.width,H=cv.height; g.clearRect(0,0,W,H); g.font='9px ui-monospace';
   const e1=pf.e1.map(Math.abs),e2=pf.e2.map(Math.abs),env=pf.axenv,mx=Math.max(...e1,...e2,...env,pf.tmax||0,1e-6),base=H-14,top=17,gw=W/3,bw=10;
   const ty=base-(pf.tmax/mx)*(base-top); g.strokeStyle='rgba(230,230,255,.28)'; g.setLineDash([3,3]); g.beginPath(); g.moveTo(0,ty); g.lineTo(W,ty); g.stroke(); g.setLineDash([]);
   g.fillStyle='rgba(230,230,255,.5)'; g.fillText('Tmax '+pf.tmax,3,ty-3);
   for(let a=0;a<3;a++){ const cx=a*gw+gw/2,isO=a===opt; const bar=(v,off,col)=>{ const hh=(v/mx)*(base-top); g.fillStyle=col; g.fillRect(cx+off,base-hh,bw,hh); };
-    bar(e1[a],-bw*1.6,'#e8564f'); bar(e2[a],-bw*0.5,'#5b9bff'); bar(env[a],bw*0.6,isO?'#ffe066':'#45d39e');
-    g.fillStyle=isO?'#ffe066':'rgba(230,230,255,.65)'; g.textAlign='center'; g.fillText((isO?'★':'')+'XYZ'[a],cx,H-2); g.textAlign='left'; }
-  g.fillStyle='#e8564f'; g.fillText('|E1|',3,11); g.fillStyle='#5b9bff'; g.fillText('|E2|',34,11); g.fillStyle='#45d39e'; g.fillText('env',66,11); }
+    bar(e1[a],-bw*1.6,chCol(0).t); bar(e2[a],-bw*0.5,chCol(2).t); bar(env[a],bw*0.6,isO?PAL.pickY:PAL.good);
+    g.fillStyle=isO?PAL.pickY:'rgba(230,230,255,.65)'; g.textAlign='center'; g.fillText((isO?'★':'')+'XYZ'[a],cx,H-2); g.textAlign='left'; }
+  g.fillStyle=chCol(0).t; g.fillText('|E1|',3,11); g.fillStyle=chCol(2).t; g.fillText('|E2|',34,11); g.fillStyle=PAL.good; g.fillText('env',66,11); }
 function toggle(nm){ SEL.has(nm)?SEL.delete(nm):SEL.add(nm); refreshSel(); }
 function selectAll(on){ if(RESULT)clearResultView(); SEL=new Set(on?INIT.electrodes.map(e=>e.name):[]); refreshSel(); }
 function setTgtCloud(pts){ if(!tgtGeo)return; const p=new Float32Array(Math.max(pts.length,1)*3);
@@ -464,27 +1149,51 @@ function setTgtCloud(pts){ if(!tgtGeo)return; const p=new Float32Array(Math.max(
   tgtGeo.setAttribute('position',new THREE.BufferAttribute(p,3)); tgtGeo.setDrawRange(0,pts.length); tgtGeo.computeBoundingSphere(); }
 async function fetchTgtVox(){ try{ const d=await (await fetch('/api/tgtvox',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(curTargetSpec())})).json(); if(d.pts)setTgtCloud(d.pts); }catch(e){} }
 let _tgtTimer; function updateMarker(){ if(!tgtGeo||!INIT)return; clearTimeout(_tgtTimer); _tgtTimer=setTimeout(fetchTgtVox,200); }  // 표적 외곽 contour (서버, 디바운스)
+//  전극 체크박스 목록을 한 번 만든다. 3D 와 **같은 SEL 집합**을 보므로 두 경로가 갈라지지 않는다.
+function buildElecList(){
+  const box=document.getElementById('elgrid'); if(!box||!INIT) return;
+  box.innerHTML=INIT.electrodes.map(e=>
+    `<label class="elchk"><input type="checkbox" data-el="${e.name}"><span>${e.name}</span></label>`).join('');
+  box.addEventListener('change', ev=>{
+    const cb=ev.target.closest('input[data-el]'); if(!cb) return;
+    //  3D 클릭 경로와 같은 규칙 — 결과 표시 중엔 선택을 바꾸지 않는다(재편집은 ↺ 초기화).
+    //  3D 는 조용히 무시하지만 목록은 disabled 로 **이유가 보이게** 한다.
+    if(RESULT){ cb.checked=SEL.has(cb.dataset.el); return; }
+    toggle(cb.dataset.el);   // toggle 이 refreshSel 을 부르고 거기서 체크 상태가 되돌아온다
+  });
+}
 function refreshSel(){ document.getElementById('cnt').textContent=SEL.size;
-  for(const nm in elMeshes){ const sel=SEL.has(nm); elMeshes[nm].material.color.setHex(sel?0x7b8cff:0x39424f); elMeshes[nm].scale.setScalar(sel?1.2:1); elLabels[nm].visible=true; elLabels[nm].element.style.color=sel?'#c9d0ff':'#79818f'; }
+  for(const nm in elMeshes){ const sel=SEL.has(nm); elMeshes[nm].material.color.setHex(sel?PAL.i.accent:PAL.i.elIdle); elMeshes[nm].scale.setScalar(sel?1.2:1); elLabels[nm].visible=true; elLabels[nm].element.style.color=sel?PAL.elLabelOn:PAL.elLabelOff; }
+  //  ★목록은 3D 의 거울이다 — 여기 한 곳에서만 맞춘다
+  document.querySelectorAll('#elgrid input[data-el]').forEach(cb=>{
+    cb.checked=SEL.has(cb.dataset.el); cb.disabled=!!RESULT; });
+  const lk=document.getElementById('elistlock'); if(lk) lk.style.display=RESULT?'block':'none';
+  const vw=document.getElementById('viewer');
+  if(vw) vw.setAttribute('aria-label', t('viewerAria').replace('{n}', SEL.size));
   document.getElementById('vhud').innerHTML=`<b>3D</b> · ${t('elecHint')}`; }
 function clearResultView(){ RESULT=false; document.getElementById('cbar').style.display='none'; cbarHi.style.display='none'; cbarLo.style.display='none';
   clearEfield(); FMODE='intensity'; document.getElementById('fmInt').classList.add('on');
   ['fmAf','fmEf'].forEach(id=>{ const b=document.getElementById(id); b.classList.remove('on'); b.disabled=true; });
   document.getElementById('cbar').style.background='';
   document.getElementById('eflegend').style.display='none'; document.getElementById('fpanel').style.display='none';
-  const col=ptGeo.attributes.color.array; for(let i=0;i<col.length;i+=3){ col[i]=.15;col[i+1]=.17;col[i+2]=.22; } ptGeo.attributes.color.needsUpdate=true; refreshSel(); }
+  const col=ptGeo.attributes.color.array; const ci=PAL.cloudIdle; for(let i=0;i<col.length;i+=3){ col[i]=ci[0];col[i+1]=ci[1];col[i+2]=ci[2]; } ptGeo.attributes.color.needsUpdate=true; refreshSel(); }
 
 function getPresets(){ try{ return JSON.parse(localStorage.getItem('ti_presets')||'{}'); }catch{ return {}; } }
 function loadPresets(){ const box=document.getElementById('presets'),P=getPresets(); box.innerHTML=''; const keys=Object.keys(P); document.getElementById('presethint').style.display=keys.length?'none':'block';
   keys.forEach(k=>{ const c=document.createElement('div'); c.className='pchip'; c.innerHTML=`<span class="load">${k}</span> <button>✕</button>`;
     c.querySelector('.load').onclick=()=>{ if(RESULT)clearResultView(); SEL=new Set(P[k]); refreshSel(); }; c.querySelector('button').onclick=()=>{ const q=getPresets(); delete q[k]; localStorage.setItem('ti_presets',JSON.stringify(q)); loadPresets(); }; box.appendChild(c); }); }
-function savePreset(){ if(SEL.size<1)return; const name=prompt('Preset name:',`Set ${Object.keys(getPresets()).length+1}`); if(!name)return; const P=getPresets(); P[name]=[...SEL]; localStorage.setItem('ti_presets',JSON.stringify(P)); loadPresets(); }
+async function savePreset(){ if(SEL.size<1)return; const name=await askText(t2('프리셋 이름','Preset name'),`Set ${Object.keys(getPresets()).length+1}`); if(!name)return; const P=getPresets(); P[name]=[...SEL]; localStorage.setItem('ti_presets',JSON.stringify(P)); loadPresets(); }
 
 function resetAll(){ SEL.clear(); PARETO=[]; LAST=null; setMode('classic'); document.getElementById('target').selectedIndex=0; onTargetChange();
-  w1.value=w2.value=w3.value=0.5; onWeight(); document.getElementById('kval').value=8; document.getElementById('savebtn').style.display='none';
+  w1.value=w2.value=w3.value=0.5; onWeight(); rngFillAll(); document.getElementById('kval').value=32;   // 마크업 기본값과 맞춘다(예전엔 8 이라 ↺ 가 값을 바꿨다) document.getElementById('savebtn').style.display='none';
   ['detail','histbox','topbox'].forEach(id=>document.getElementById(id).style.display='none');
   ['m1','m2','m3','m4'].forEach(id=>document.getElementById(id).textContent='—'); document.getElementById('toplist').innerHTML=''; document.getElementById('agrid').innerHTML='';
-  document.getElementById('montage').outerHTML='<div id="montage" class="empty" data-i18n="emptyState">'+t('emptyState')+'</div>'; clearResultView(); s4lClear(); }
+  //  ⚠ 예전엔 outerHTML 로 노드를 통째로 갈아끼워 이 요소에 붙은 리스너가 조용히 끊겼다.
+  //  innerHTML 로 바꾸고 클래스만 되돌린다 — 복사 버튼은 위임 리스너라 무관하지만,
+  //  노드를 살려 두는 편이 앞으로 붙일 리스너까지 안전하다.
+  const mg=document.getElementById('montage'); mg.className='empty'; mg.setAttribute('data-i18n','emptyState'); mg.textContent=t('emptyState');
+  const vbx=document.getElementById('verdict'); if(vbx) vbx.style.display='none';
+  ENV_DATA=null; ENV_LAST=null; const ebx=document.getElementById('envbox'); if(ebx) ebx.style.display='none'; clearResultView(); s4lClear(); }
 
 function onWeight(){ w1o.value=(+w1.value).toFixed(2); w2o.value=(+w2.value).toFixed(2); w3o.value=(+w3.value).toFixed(2);
   if(RESULT && PARETO.length){ renderTop(); loadMontage(rankPareto()[0]); } }
@@ -494,21 +1203,105 @@ function rankPareto(){ const w=W(),mx1=Math.max(...PARETO.map(p=>p.M1))||1,mx2=M
   const sorted=PARETO.map(p=>({...p,WP:w[0]*p.M1/mx1+w[1]*p.M2/mx2-w[2]*p.M3/mx3})).sort((a,b)=>b.WP-a.WP);
   // 조합당 최고 WP 하나만 (전류비만 다른 중복 제거) → 상위 목록이 서로 다른 전극 조합
   const seen=new Set(),out=[]; for(const p of sorted){ const k=comboKey(p); if(seen.has(k))continue; seen.add(k); out.push(p); } return out; }
+//  TSV 로 복사한다 — 스프레드시트에 그대로 붙는다. 위임 리스너라 몽타주를 다시 그려도 살아 있다.
+document.addEventListener('click', async e=>{
+  const b=e.target.closest('.ptcopy'); if(!b) return;
+  const tb=b.closest('.proto')?.querySelector('table.ptbl'); if(!tb) return;
+  //  ⚠ 탭·개행을 문자열 리터럴에 직접 쓰지 않는다 — 개행은 JS 구문 오류다.
+  const TAB=String.fromCharCode(9), NL=String.fromCharCode(10);
+  const tsv=[...tb.querySelectorAll('tr')].map(tr=>
+    [...tr.querySelectorAll('th,td')].map(c=>c.textContent.trim()).join(TAB)).join(NL);
+  try{ await navigator.clipboard.writeText(tsv); }
+  catch(err){ /* 비보안 컨텍스트 등 — 아래 폴백 */
+    const ta=document.createElement('textarea'); ta.value=tsv; document.body.appendChild(ta);
+    ta.select(); try{ document.execCommand('copy'); }catch(_){} ta.remove(); }
+  const old=b.textContent; b.textContent=t('vCopied'); setTimeout(()=>{ b.textContent=old; },1400);
+});
+//  ══ 알림·대화상자 ═══════════════════════════════════════════════════════
+//  네이티브 alert/prompt/confirm 은 근-검정 UI 위에 OS 창을 띄워 도구가 아마추어처럼
+//  보이고, 문구에 서식을 줄 수 없으며, 페이지를 통째로 멈춘다.
+//  <dialog>+showModal() 은 브라우저 top layer 에 올라가 .fpanel(z-index 6)·WebGL 캔버스·
+//  CSS2D 라벨과 z-index 협상이 필요 없고 포커스 트랩·Esc·::backdrop 이 공짜다.
+function toast(msg,kind){
+  //  ★상단 중앙에 띄운다 — 우하단은 프로토콜 출력 자리라 읽던 것을 가린다
+  let w=document.getElementById('toastw');
+  if(!w){ w=document.createElement('div'); w.id='toastw'; w.setAttribute('role','status');
+          w.setAttribute('aria-live','polite'); document.body.appendChild(w); }
+  const d=document.createElement('div'); d.className='toast'+(kind?' '+kind:''); d.textContent=msg;
+  w.appendChild(d); setTimeout(()=>d.remove(), kind==='err'?6000:3600);
+}
+function _dlg(){ let d=document.getElementById('dlg');
+  if(!d){ d=document.createElement('dialog'); d.id='dlg'; document.body.appendChild(d); } return d; }
+//  확인 — confirm() 대체. 줄바꿈을 그대로 살린다.
+function ask(msg,okLabel){
+  return new Promise(res=>{
+    const d=_dlg();
+    d.innerHTML=`<form method="dialog"><div class="dmsg"></div><div class="drow">`
+      +`<button class="btn" value="">${t('dCancel')}</button>`
+      +`<button class="cta dok" value="ok">${okLabel||t('dOk')}</button></div></form>`;
+    d.querySelector('.dmsg').textContent=msg;      // textContent — 서버 문구를 HTML 로 해석하지 않는다
+    d.onclose=()=>res(d.returnValue==='ok');
+    d.showModal(); d.querySelector('.dok').focus();
+  });
+}
+//  입력 — prompt() 대체.
+function askText(msg,def){
+  return new Promise(res=>{
+    const d=_dlg();
+    d.innerHTML=`<form method="dialog"><div class="dmsg"></div>`
+      +`<input id="dinp" style="margin-top:10px"><div class="drow">`
+      +`<button class="btn" value="">${t('dCancel')}</button>`
+      +`<button class="cta" value="ok">${t('dOk')}</button></div></form>`;
+    d.querySelector('.dmsg').textContent=msg;
+    const inp=d.querySelector('#dinp'); inp.value=def||'';
+    d.onclose=()=>res(d.returnValue==='ok'?inp.value:null);
+    d.showModal(); inp.focus(); inp.select();
+  });
+}
+function montageLabel(r){
+  const b=r&&r.best; if(!b) return '—';
+  if(b.ch1&&b.ch2&&b.ch1.length===2&&b.ch2.length===2)
+    return `${b.ch1[0]}/${b.ch1[1]} × ${b.ch2[0]}/${b.ch2[1]}`+(b.ratio!=null?` @${(+b.ratio).toFixed(2)}`:'');
+  if(b.timemux) return `${(b.slots||[]).length}${t('vSlots')} · ${b.n_electrodes||'?'}${t('vElec')}`;
+  const chs=(r.protocol&&r.protocol.channels)||[];
+  if(chs.length) return chs.map((c,i)=>`CH${i+1} ${Object.keys(c.currents_mA||{}).join('/')}`).join('  ×  ');
+  return '—';
+}
 function renderTop(){ const R=rankPareto().slice(0,5),box=document.getElementById('toplist'); box.innerHTML='';
+  box.setAttribute('role','listbox'); box.setAttribute('aria-label',t('mTop'));
   R.forEach((m,i)=>{ const d=document.createElement('div'); d.className='topitem'+(i===0?' active':'');
-    d.innerHTML=`<span class="rk">#${i+1}</span><span class="mg">${m.ch1[0]}/${m.ch1[1]} × ${m.ch2[0]}/${m.ch2[1]} @${m.ratio}</span><span class="sc">M2 ${m.M2.toFixed(2)}·M3 ${m.M3.toFixed(1)}%</span>`;
-    d.onclick=()=>{ document.querySelectorAll('.topitem').forEach(x=>x.classList.remove('active')); d.classList.add('active'); loadMontage(m); }; box.appendChild(d); });
+    //  ★키보드 동등성 — 클릭으로만 고를 수 있으면 이 목록은 키보드 사용자에게 없는 것이나 같다.
+    //  roving tabindex: 활성 항목만 Tab 정지점이고, 목록 안에서는 ↑↓ 로 옮긴다.
+    d.setAttribute('role','option'); d.setAttribute('aria-selected', i===0?'true':'false');
+    d.dataset.els=[...(m.ch1||[]),...(m.ch2||[])].join(',');   // 3D 미리보기용
+    d.tabIndex = i===0?0:-1;
+    //  ★#1 대비 델타 — 절대값만 보면 2위가 얼마나 뒤졌는지 알 수 없다.
+    const d1=R[0], dm=i===0?'' :
+      `<span class="dl">${t('vDelta')} M1 ${(m.M1-d1.M1>=0?'+':'')}${(m.M1-d1.M1).toFixed(3)}`
+      +` · M3 ${(m.M3-d1.M3>=0?'+':'')}${(m.M3-d1.M3).toFixed(1)}%</span>`;
+    d.innerHTML=`<span class="rk">#${i+1}</span><span class="mg">${m.ch1[0]}/${m.ch1[1]} × ${m.ch2[0]}/${m.ch2[1]} @${m.ratio}</span><span class="sc">M2 ${m.M2.toFixed(2)}·M3 ${m.M3.toFixed(1)}%</span>${dm}`;
+    const pick=()=>{ document.querySelectorAll('.topitem').forEach(x=>{
+        x.classList.remove('active'); x.setAttribute('aria-selected','false'); x.tabIndex=-1; });
+      d.classList.add('active'); d.setAttribute('aria-selected','true'); d.tabIndex=0; loadMontage(m); };
+    d.onclick=pick;
+    d.onkeydown=ev=>{
+      if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); pick(); return; }
+      if(ev.key!=='ArrowDown'&&ev.key!=='ArrowUp') return;
+      const items=[...box.querySelectorAll('.topitem')], j=items.indexOf(d);
+      const nx=items[(j + (ev.key==='ArrowDown'?1:items.length-1)) % items.length];
+      ev.preventDefault(); nx.tabIndex=0; nx.focus(); };
+    box.appendChild(d); });
   document.getElementById('topbox').style.display=R.length?'block':'none'; }
 
-async function compute(){ const need=MODE==='dual'?8:4; if(SEL.size<need){ alert(MODE==='dual'?'4채널 이중 TI는 전극 8개 이상 선택하세요.':t('needElec')); return; } const req={target:curTargetSpec(),allowed:[...SEL],mode:MODE,weights:W(),pctl:50,k:MODE==='gevd'?+document.getElementById('kval').value:null,f1:+f1.value,f2:+f2.value}; if(MODE==='dual')req.freqs=[+df1.value,+df2.value,+df3.value,+df4.value]; if(MODE==='gevd')req.pmax_rel=+document.getElementById('pmaxval').value; if(MODE==='timemux'){req.k_slots=+document.getElementById('kslots').value;req.max_elec=+document.getElementById('maxelec').value;req.m1_floor=+document.getElementById('m1floor').value;}
+async function compute(){ const need=MODE==='dual'?8:4; if(SEL.size<need){ toast(MODE==='dual'?'4채널 이중 TI는 전극 8개 이상 선택하세요.':t('needElec'),'err'); return; } const req={target:curTargetSpec(),allowed:[...SEL],mode:MODE,weights:W(),pctl:50,k:MODE==='gevd'?+document.getElementById('kval').value:null,f1:+f1.value,f2:+f2.value}; if(MODE==='dual')req.freqs=[+df1.value,+df2.value,+df3.value,+df4.value]; if(MODE==='gevd')req.pmax_rel=+document.getElementById('pmaxval').value; if(MODE==='timemux'){req.k_slots=+document.getElementById('kslots').value;req.max_elec=+document.getElementById('maxelec').value;req.m1_floor=+document.getElementById('m1floor').value;}
   s4lClear();   // 새 몽타주를 계산하면 옛 Sim4Life 결과는 더 이상 이 화면의 것이 아니다
-  const run=document.getElementById('run'); run.disabled=true; run.textContent='…'; document.getElementById('prog').classList.add('on'); setProg(0.02,'');
+  const run=document.getElementById('run'); run.disabled=true; run.textContent='…'; document.getElementById('prog').classList.add('on'); setProg(0.02,''); progStart();
   try{ const {job}=await (await fetch('/api/optimize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(req)})).json(); const t0=performance.now();
     while(true){ await new Promise(r=>setTimeout(r,250)); const s=await (await fetch('/api/progress?job='+job)).json();
       if(s.error)throw new Error(s.error); setProg(s.pct||0,s.stage||'');
       if(s.done){ if(s.result)onResult(s.result,((performance.now()-t0)/1000).toFixed(1)); else throw new Error('no result'); break; } }
   }catch(e){ document.getElementById('montage').innerHTML=`<div class="err">${e.message}</div>`; }
-  finally{ run.disabled=false; run.textContent=t('run'); setTimeout(()=>document.getElementById('prog').classList.remove('on'),500); } }
+  finally{ progStop(); run.disabled=false; run.textContent=t('run'); setTimeout(()=>document.getElementById('prog').classList.remove('on'),500); } }
 // ── Sim4Life 백엔드 잡 ── 최적화(초 단위)와 달리 분 단위라 별도 진행표시를 쓴다.
 // 전극 온디맨드 솔브는 UI 에서 뺐다(리드필드 84전극이 이미 다 풀려 있다).
 // 서버 엔드포인트 `/api/electrode/solve` 는 남아 있으니 필요하면 직접 부르면 된다.
@@ -521,7 +1314,7 @@ function s4lClear(){
   //   계속 돌아 **고아**가 된다. 화면만 비우고 끝나면 다시 그린다.
   if(!S4LJOB) document.getElementById('s4lprog').style.display='none';
   document.getElementById('s4lbox').style.display='none';
-  ['s4lgrid','s4ltbl','s4limgs','s4ltgt'].forEach(id=>{const e=document.getElementById(id); if(e)e.innerHTML='';});
+  ['s4ltgt'].forEach(id=>{const e=document.getElementById(id); if(e)e.innerHTML='';});
   document.getElementById('s4lsub').textContent='';
   S4LRES=null;
   if(!S4LJOB){ s4lSet('s4lstat',t2('대기','idle')); s4lSet('s4llog',''); s4lSet('s4lstage','—');
@@ -550,7 +1343,7 @@ async function s4lPoll(){
 }
 async function s4lCancel(){
   if(!S4LJOB) return;
-  if(!confirm(t2('돌고 있는 Sim4Life 작업을 중단합니다.\n지금까지 푼 것은 버려집니다 (캐시에 저장되지 않습니다).\n\n중단할까요?',
+  if(!await ask(t2('돌고 있는 Sim4Life 작업을 중단합니다.\n지금까지 푼 것은 버려집니다 (캐시에 저장되지 않습니다).\n\n중단할까요?',
                  'Stop the running Sim4Life job.\nWork done so far is discarded (nothing is written to the cache).\n\nProceed?'))) return;
   const btn=document.getElementById('s4lcancel'); btn.disabled=true; btn.textContent=t2('중단 중…','stopping…');
   s4lSet('s4lstage',t2('취소 요청 — 프로세스 정리 중','cancel requested — cleaning up'));
@@ -564,13 +1357,13 @@ async function s4lCancel(){
 // ── 몽타주를 Sim4Life 로 ── 뇌 안의 E 는 중첩으로 이미 정확하다(재솔브와 상관 0.99997).
 //   값어치는 **머리 전체**에 있다 — 두피 전류밀도 같은 안전 지표는 여기서만 나온다.
 async function s4lSendMontage(){
-  if(!LAST||!LAST.best){ alert(t2('먼저 계산을 눌러 몽타주를 만드세요.','Run Compute first to produce a montage.')); return; }
+  if(!LAST||!LAST.best){ toast(t2('먼저 계산을 눌러 몽타주를 만드세요.','Run Compute first to produce a montage.'),'err'); return; }
   const b=LAST.best;
   if(!b.ch1||!b.ch2||b.ch1.length!==2||b.ch2.length!==2){
-    alert(t2('2쌍 몽타주(classic·NSGA)만 보낼 수 있습니다. 분산·이중TI·시분할은 채널 구조가 달라 지원하지 않습니다.',
-             'Only two-pair montages (classic / NSGA) can be sent. Distributed, dual-TI and time-mux have a different channel structure.')); return; }
+    toast(t2('2쌍 몽타주(classic·NSGA)만 보낼 수 있습니다. 분산·이중TI·시분할은 채널 구조가 달라 지원하지 않습니다.',
+             'Only two-pair montages (classic / NSGA) can be sent. Distributed, dual-TI and time-mux have a different channel structure.'),'err'); return; }
   const nm=`${b.ch1[0]}/${b.ch1[1]} × ${b.ch2[0]}/${b.ch2[1]} @${b.ratio}`;
-  if(!confirm(nm+t2('\n\nSim4Life 로 보내 머리 전체를 풉니다.\n약 7분 — 전에 같은 분석을 했다면 즉시 꺼내옵니다.\n\n진행할까요?',
+  if(!await ask(nm+t2('\n\nSim4Life 로 보내 머리 전체를 풉니다.\n약 7분 — 전에 같은 분석을 했다면 즉시 꺼내옵니다.\n\n진행할까요?',
                      '\n\nSend to Sim4Life and solve the whole head.\n~7 min — instant if this exact analysis was run before.\n\nProceed?'))) return;
   document.getElementById('s4lprog').style.display='block';
   s4lSet('s4lstat',t2('요청','requested')); s4lSet('s4llog',''); document.getElementById('s4lbox').style.display='none';
@@ -619,15 +1412,17 @@ function renderS4L(res,job){
       'Computed from the <b>Sim4Life</b> solution. The bottom line is the ratio to leadfield superposition — same model, so it should sit near 1.')}</div>`);
 
     // ── 2. where the stimulation lands — bars ──────────────────────
-    const mx=Math.max(...T.regions.map(x=>x.over_thr_pct),1);
+    //  ★막대는 **절대 0~100 %**. 예전엔 지역 최댓값으로 다시 정규화해 1위가 늘 꽉 찬 막대였고,
+    //  그러면 '표적 62 %·다른 곳 0.4 %' 와 '표적 8 %·다른 곳 6 %' 가 똑같아 보인다.
+    const regs=[...T.regions].sort((a,b)=>b.over_thr_pct-a.over_thr_pct);
     H.push(head(t2('자극 부위','Stimulated regions'),
-      t2(`임계 ${f(T.threshold.value,4)} V/m (표적 엔벨로프 중앙값) 를 넘는 부피 비율`,
-         `volume fraction above ${f(T.threshold.value,4)} V/m (median target envelope)`)));
-    H.push('<div class="s4lreg">'+T.regions.map(x=>{
+      t2(`임계 ${f(T.threshold.value,4)} V/m (표적 엔벨로프 중앙값) 를 넘는 부피 비율 · 눈금 0–100 %`,
+         `volume fraction above ${f(T.threshold.value,4)} V/m (median target envelope) · scale 0–100 %`)));
+    H.push('<div class="s4lreg">'+regs.map(x=>{
       const p=x.over_thr_pct, col=p>=50?'var(--anode)':(p>=10?'var(--gold)':(p>=1?'var(--accent)':'var(--faint)'));
       const tgt=x.in_target>0?` <span style="color:var(--mint);font-size:11px">${t2('표적','target')}</span>`:'';
       return `<div class="s4lrow"><div class="nm">${t2(x.region_ko||x.region, x.region)}${tgt}</div>`+
-        `<div class="s4ltrk"><div class="s4lfil" style="width:${(p/mx*100).toFixed(1)}%;background:${col}"></div></div>`+
+        `<div class="s4ltrk"><div class="s4lfil" style="width:${p.toFixed(1)}%;background:${col}"></div></div>`+
         `<div class="pc" style="color:${col}">${f(p,2)}%<small>${x.over_thr_voxels.toLocaleString()} / ${x.voxels.toLocaleString()}</small></div></div>`;
     }).join('')+'</div>');
     H.push(`<div class="hint" style="margin-top:7px">${t2(
@@ -658,36 +1453,53 @@ function renderS4L(res,job){
   H.push('<div style="display:flex;gap:8px;align-items:flex-start;overflow-x:auto;padding-bottom:4px">'+
     (res.slices||[]).map(s=>
     `<a href="/api/montage/file?job=${job}&f=${s.file}" target="_blank" style="flex:0 0 auto">`+
-    `<img src="/api/montage/file?job=${job}&f=${s.file}" style="height:500px;width:auto;display:block;border-radius:8px;background:#0d1014"></a>`).join('')+'</div>');
+    `<img alt="${LANG==='ko'?'단면 영상':'slice image'} ${s.file}" src="/api/montage/file?job=${job}&f=${s.file}" style="height:500px;width:auto;display:block;border-radius:8px;background:var(--img-bg)"></a>`).join('')+'</div>');
 
   // ── 5. per-tissue — secondary, folded away ───────────────────────
   H.push('<details class="s4ld" style="margin-top:14px"><summary>'+
     t2(`조직별 상세 (${(res.tissues||[]).length}종) — 두피·두개골·CSF·안구 포함`,
        `Per-tissue detail (${(res.tissues||[]).length}) — incl. scalp, skull, CSF, eye`)+'</summary>'+
-    '<table class="s4lt"><thead><tr>'+
+    '<div class="tscroll"><table class="s4lt"><thead><tr>'+
     [t2('조직','Tissue'),t2('셀 수','Cells'),t2('엔벨로프 중앙','Env median'),'p95',t2('최대','Max'),'J max (A/m²)']
       .map(h=>`<th>${h}</th>`).join('')+
     '</tr></thead><tbody>'+(res.tissues||[]).map(x=>
       `<tr><td>${t2(x.tissue_ko||x.tissue, x.tissue)}</td><td>${x.cells.toLocaleString()}</td><td>${f(x.env_median,4)}</td>`+
       `<td>${f(x.env_p95,4)}</td><td>${f(x.env_max,3)}</td><td>${f(x.J_max,3)}</td></tr>`).join('')+
-    '</tbody></table></details>');
+    '</tbody></table></div></details>');
 
   document.getElementById('s4ltgt').innerHTML=H.join('');
   box.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
+//  ★진행 표시는 애니메이션이 아니라 **정보**로 푼다. 서버 pct 는 단계 사이에서 오래 멎어
+//  있는데(몽타주 평가가 통째로 한 단계다), 시머를 돌리면 "뭔가 하고 있다" 는 인상만 주고
+//  실제로는 아무것도 알려주지 않는다. 경과 초는 얼마나 기다렸는지를 말해 준다.
+let progT0=0, progIV=0;
+function progStart(){ progT0=performance.now(); clearInterval(progIV);
+  const tick=()=>{ const e=document.getElementById('pelapsed'); if(!e) return;
+    e.textContent=((performance.now()-progT0)/1000).toFixed(0)+'s'; };
+  tick(); progIV=setInterval(tick,1000); }
+function progStop(){ clearInterval(progIV); progIV=0; }
 function setProg(p,st){ document.getElementById('pfill').style.width=(p*100).toFixed(0)+'%'; document.getElementById('ppct').textContent=(p*100).toFixed(0)+'%';
   const k='st_'+String(st).replace(/[ -]/g,''),v=t(k); document.getElementById('pstage').textContent=(v===k?st:v); }
 
 async function loadMontage(m){ const r=await (await fetch('/api/field',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({montage:m,target:curTargetSpec(),f1:+f1.value,f2:+f2.value})})).json();
-  if(r.error)return; renderCore(r); if(FMODE!=='intensity')setFMode(FMODE); }
-function onResult(r,secs){ RESULT=true; r._secs=secs; r._method=r.method; r._np=r.n_pareto; r._ne=r.n_eval; r._hv=r.hypervolume; PARETO=r.pareto||[]; renderCore(r);
+  if(r.error)return; renderCore(r); loadEnvelope(r); if(FMODE!=='intensity')setFMode(FMODE); }
+function onResult(r,secs){ RESULT=true; r._secs=secs; r._method=r.method; r._np=r.n_pareto; r._ne=r.n_eval; r._hv=r.hypervolume; PARETO=r.pareto||[]; renderCore(r); loadEnvelope(r);
   document.getElementById('fmEf').disabled=false; document.getElementById('fmAf').disabled=false; if(FMODE!=='intensity')setFMode(FMODE);
   if(FMODE!=='efield')document.getElementById('resolp').style.display='block';   // 계산 완료 즉시 활성임계 패널
   document.getElementById('savebtn').style.display='inline-block';
   if(PARETO.length) renderTop();
   else document.getElementById('topbox').style.display='none'; }
 
-function renderCore(r,relang){ LAST=r; const b=r.best,dist=(('currents'in b)||b.timemux),f=r.field;
+//  ★renderCore 를 둘로 쪼갠다 — 이 파일에서 가장 위험했던 지점이다.
+//  한 함수가 three.js 점군 색 버퍼(ptGeo.attributes.color)를 쓰면서 **동시에** 결과 DOM 을
+//  만들고 있었다. 그래서 언어 토글이 renderCore(LAST,true) 를 부를 때마다 10만 복셀짜리
+//  색 버퍼를 통째로 GPU 에 다시 올렸다(그 relang 인자는 선언만 되고 본문에서 안 쓰였다).
+//  이제 결과 쪽 변경은 three.js 를 건드릴 수 없는 함수 안에 갇힌다.
+function renderCore(r){ LAST=r; paintField(r); paintResults(r); }
+
+//  ── 3D 만 ── 점군 색·컬러바·전극 메시/라벨. DOM 결과는 여기서 건드리지 않는다.
+function paintField(r){ const f=r.field;
   const tm=f.tmax,mx=f.tmax_max||Math.max(...tm),col=ptGeo.attributes.color.array;
   // 표적 포함 모든 복셀을 세기(inferno)로 — 표적 위치는 초록 점구름(tgtCloud)이 오버레이로 표시
   for(let i=0;i<tm.length;i++){ const c=inferno(tm[i]/mx); col[i*3]=c[0];col[i*3+1]=c[1];col[i*3+2]=c[2]; }
@@ -695,10 +1507,24 @@ function renderCore(r,relang){ LAST=r; const b=r.best,dist=(('currents'in b)||b.
   setDrive(f.tmax,f.target); if(FMODE==='intensity')resolCompute();
   document.getElementById('vhud').innerHTML='<b>'+(LANG==='ko'?'필드':'Field')+'</b> · '+(LANG==='ko'?'초록=표적 · 밝을수록 강함':'green=target · brighter=stronger');
   // 전극: 채널 색 (0/1=빨강/주황=시스템A 또는 f₁/f₂, 2/3=파랑/청록=시스템B) · 극성은 크기·프로토콜 부호
-  const CHC=[0xff6b6b,0xffa94d,0x5b9bff,0x4fe3bf], CHL=['#ff9a9a','#ffc98a','#9dc2ff','#a7f0dd'];
   for(const nm in elMeshes){ const m=elMeshes[nm],u=r.used[nm];
-    if(u){ const ci=u.ch||0; m.material.color.setHex(CHC[ci]||0xff6b6b); m.scale.setScalar(1+Math.min(Math.abs(u.I),2)/2*.9); elLabels[nm].visible=true; elLabels[nm].element.style.color=CHL[ci]||'#ff9a9a'; }
-    else{ m.material.color.setHex(0x2a3038); m.scale.setScalar(.7); elLabels[nm].visible=false; } }
+    if(u){ const c=chCol(u.ch||0); m.material.color.setHex(c.int); m.scale.setScalar(1+Math.min(Math.abs(u.I),2)/2*.9);
+      elLabels[nm].visible=true; elLabels[nm].element.style.color=c.t; }
+    else{ m.material.color.setHex(PAL.i.elOff); m.scale.setScalar(.7); elLabels[nm].visible=false; } }
+  buildArcs(r); showArcs(null); hudArcs(null);
+}
+
+//  ── 결과 DOM 만 ── 지표·상세·히스토그램·몽타주. **three.js 를 부르지 않는다.**
+//  언어 토글은 이 함수만 다시 부르면 된다.
+function paintResults(r){ const b=r.best,dist=(('currents'in b)||b.timemux);
+  //  ★판정 밴드 — 답을 맨 위에. 값은 즉시 최종값으로 넣는다(애니메이션 없음).
+  const vb=document.getElementById('verdict');
+  if(vb){ vb.style.display='block';
+    document.getElementById('vmg').textContent=montageLabel(r);
+    document.getElementById('vm1').textContent=(dist?b.M1_dir:b.M1).toFixed(3);
+    const fo=r.focus;
+    document.getElementById('vbadge').innerHTML=fo
+      ? `<span class="badge ${fo.peak_in_target?'ok':'no'}">${fo.peak_in_target?t('sIn'):t('sOut')}</span>` : ''; }
   m1.textContent=(dist?b.M1_dir:b.M1).toFixed(3); m2.textContent=(dist?b.M2_dir:b.M2).toFixed(2); m3.textContent=(dist?b.M3_dir:b.M3).toFixed(1);
   if(b.timemux){ m4k.textContent=LANG==='ko'?'초점이득':'focality gain'; m4.textContent='×'+(+b.focality_gain).toFixed(2); document.getElementById('m4u').textContent=LANG==='ko'?'단일 2쌍 대비(등강도)':'vs best single (matched)'; }
   else if(b.huang){ m4k.textContent=LANG==='ko'?'표적변조':'target mod'; m4.textContent=(+b.M1_dir).toFixed(3); document.getElementById('m4u').textContent='Pmax '+(+b.pmax_rel).toFixed(2); }
@@ -714,50 +1540,69 @@ function renderCore(r,relang){ LAST=r; const b=r.best,dist=(('currents'in b)||b.
   const fq=r.freq_check;
   if(fq&&fq.level!=='ok'){ const err=fq.level==='error';
     document.getElementById('freqwarn').innerHTML=
-      `<div style="background:${err?'#2a1214':'#241d10'};border:1px solid ${err?'#7a2a30':'#5a4620'};border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.6;color:${err?'#ffb3b8':'#ffcf8a'}">
+      `<div style="background:${err?PAL.errBg:PAL.warnBg};border:1px solid ${err?PAL.errBd:PAL.warnBd};border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.6;color:${err?PAL.errFg:PAL.warnFg}">
          <b>${err?'⚠ 주파수 설정 오류':'주의'}</b> · Δf = ${(fq.df||[]).join(', ')} Hz<br>${fq.msg}</div>`;
     document.getElementById('freqwarn').style.display='block';
   } else document.getElementById('freqwarn').style.display='none';
   let html=`<div style="color:var(--dim);font-family:var(--mono);font-size:11.5px;margin-bottom:9px">${mlabel(r._method)||r.mode||''}${r._secs?` · ${r._secs}${t('secs')}`:''}${r._np?` · pareto ${r._np}`:''}${r._hv?` · HV ${r._hv}`:''}</div>`;
   if(r.M2_af!==undefined){ const wM2=Math.min(r.M2_field,r.M2_af),wM3=Math.max(r.M3_field,r.M3_af);
-    html+=`<div style="font-family:var(--mono);font-size:10.5px;background:#241d10;border:1px solid #5a4620;border-radius:6px;padding:7px 10px;margin-bottom:9px;color:#ffcf8a;line-height:1.7">
+    html+=`<div style="font-family:var(--mono);font-size:10.5px;background:${PAL.warnBg};border:1px solid ${PAL.warnBd};border-radius:6px;padding:7px 10px;margin-bottom:9px;color:${PAL.warnFg};line-height:1.7">
       <b>β ${LANG==='ko'?'이중기전 선택성 (방향최악)':'Dual-mechanism selectivity (worst-orient.)'}</b><br>
-      ${LANG==='ko'?'필드':'Field'} M2 <b>${r.M2_field}</b> · AF M2 <b>${r.M2_af}</b> → ${LANG==='ko'?'최악':'worst'} <b style="color:${wM2>=1?'#7fe0a0':'#ff9a9a'}">${wM2.toFixed(2)}</b> ${wM2<1?(LANG==='ko'?'(off≥표적, 미선택)':'(off≥target, non-selective)'):''}<br>
-      ${LANG==='ko'?'누출':'Leak'} M3 field <b>${r.M3_field}%</b> · AF <b>${r.M3_af}%</b> → ${LANG==='ko'?'최악':'worst'} <b style="color:${wM3<=25?'#7fe0a0':'#ff9a9a'}">${wM3.toFixed(0)}%</b></div>`; }
+      ${LANG==='ko'?'필드':'Field'} M2 <b>${r.M2_field}</b> · AF M2 <b>${r.M2_af}</b> → ${LANG==='ko'?'최악':'worst'} <b style="color:${wM2>=1?PAL.good:PAL.anode}">${wM2.toFixed(2)}</b> ${wM2<1?(LANG==='ko'?'(off≥표적, 미선택)':'(off≥target, non-selective)'):''}<br>
+      ${LANG==='ko'?'누출':'Leak'} M3 field <b>${r.M3_field}%</b> · AF <b>${r.M3_af}%</b> → ${LANG==='ko'?'최악':'worst'} <b style="color:${wM3<=25?PAL.good:PAL.anode}">${wM3.toFixed(0)}%</b></div>`; }
   html+=`<div class="proto">`;
-  const PCOL=['#ff8a8a','#ffb066','#7db0ff','#5fe3c0'];
   if(r.protocol.timemux){   // 시분할: 타임라인 + 슬롯별 조합
-    const S=b.slots||[], SC=['#ff8a8a','#ffb066','#7db0ff','#5fe3c0','#c9a0ff','#ffd76a'];
+    const S=b.slots||[], SC=CH.map(c=>c.hex);   // 슬롯 색 = 채널 색 (3D 메시와 같은 한 벌)
     const byslot={}; r.protocol.channels.forEach(ch=>{ (byslot[ch.slot]=byslot[ch.slot]||[]).push(ch); });
     const cnt={}; S.forEach(s=>[...s.ch1,...s.ch2].forEach(e=>cnt[e]=(cnt[e]||0)+1));
     const reused=Object.entries(cnt).filter(([e,c])=>c>1).sort((a,b)=>b[1]-a[1]).map(([e,c])=>`${e}×${c}`);
     html+=`<div style="margin:0 0 12px"><div style="display:flex;height:26px;border-radius:6px;overflow:hidden;border:1px solid var(--border)">`;
-    S.forEach((s,i)=>{ html+=`<div title="슬롯 ${i+1}" style="width:${(s.duty*100).toFixed(1)}%;background:${SC[i%6]};display:grid;place-items:center;font:700 10px var(--mono);color:#0b0e13">${(s.duty*100).toFixed(0)}%</div>`; });
+    S.forEach((s,i)=>{ html+=`<div title="슬롯 ${i+1}" style="width:${(s.duty*100).toFixed(1)}%;background:${SC[i%6]};display:grid;place-items:center;font:700 10px var(--mono);color:${PAL.onAccent}">${(s.duty*100).toFixed(0)}%</div>`; });
     html+=`</div><div class="hint" style="margin-top:5px">${LANG==='ko'?'시간축 — 슬롯을 duty 비율로 순차 인가 (고속 스위칭 → 뉴런은 시간평균을 인지)':'time axis — slots applied sequentially by duty (fast switching → the neuron perceives the time average)'}</div>`;
     html+=`<div class="hint">${LANG==='ko'?'전극':'electrodes'} ${b.n_electrodes}${LANG==='ko'?'개 사용':' used'}${reused.length?` · ${LANG==='ko'?'재사용':'reused'} ${reused.join(' ')}`:''}</div></div>`;
-    S.forEach((s,i)=>{ const col=SC[i%6], chs=byslot[i+1]||[];
+    S.forEach((s,i)=>{ const col=chCol(i).t, chs=byslot[i+1]||[];
       html+=`<div style="border-left:3px solid ${col};padding-left:10px;margin-bottom:9px">
         <div style="font:600 11px var(--mono);color:${col};letter-spacing:.03em">${LANG==='ko'?'슬롯':'SLOT'} ${i+1} · duty ${(s.duty*100).toFixed(0)}% · ${LANG==='ko'?'전류비':'ratio'} ${(+s.ratio).toFixed(2)}</div>`;
       chs.forEach((ch,k)=>{ const cu=Object.entries(ch.currents_mA).map(([e,I])=>`<b style="color:var(--text)">${e}</b> ${I>=0?'+':''}${I}`).join('&nbsp; ');
         html+=`<div style="font:11.5px var(--mono);color:var(--dim);margin-top:2px">CH${k+1}·${ch.freq_Hz}Hz&nbsp; ${cu}</div>`; });
       html+=`</div>`; });
   } else
-  r.protocol.channels.forEach((ch,i)=>{ const col=PCOL[i]||'#ff8a8a'; const cur=Object.entries(ch.currents_mA).map(([e,I])=>`<span style="color:${col}">${e} ${I>=0?'+':''}${I}</span>`).join('  ');
-    html+=`<div><span class="chl">CH${i+1}·${ch.freq_Hz}Hz</span>  ${cur}</div>`; });
+  {  //  ★열은 saveResult() 의 CSV 열과 동일하다 — 화면과 내보내기가 같아야 전사 오류가 안 난다.
+     //  (전극 · 채널 · 주파수 · 전류 · 극성 — 시분할은 슬롯·듀티가 붙는다)
+    const rows=[];
+    r.protocol.channels.forEach((chn,i)=>{ Object.entries(chn.currents_mA||{}).forEach(([e,I])=>{
+      rows.push({el:e, ch:i, chn:`CH${i+1}`, hz:chn.freq_Hz, I:I}); }); });
+    html+=`<div class="tscroll"><table class="s4lt ptbl"><thead><tr>`
+      + [t2('전극','Electrode'),t2('채널','Channel'),t2('주파수(Hz)','Freq(Hz)'),t2('전류(mA)','Current(mA)'),t2('극성','Polarity')]
+          .map(h=>`<th>${h}</th>`).join('')
+      + `</tr></thead><tbody>`
+      + rows.map(o=>`<tr class="prow-hl" tabindex="0" data-ch="${o.ch}" data-el="${o.el}" style="--chc:${chCol(o.ch).t}"><td class="pel">${o.el}</td>`
+          + `<td><span class="chl">${o.chn}</span></td><td>${o.hz}</td>`
+          + `<td>${(+o.I).toFixed(3)}</td><td class="ppol">${o.I>=0?'+':'−'}</td></tr>`).join('')
+      + `</tbody></table></div>`;
+    html+=`<div class="prow2"><button class="btn ptcopy" data-copy="1">${t('vCopy')}</button></div>`;
+  }
   document.getElementById('montage').innerHTML=html+'</div>'; document.getElementById('savebtn').style.display=RESULT?'inline-block':'none'; }
 
-function drawHist(h){ const cv=document.getElementById('hist'),W2=cv.width=cv.clientWidth,H=cv.height,ctx=cv.getContext('2d'); ctx.clearRect(0,0,W2,H); const pad=34,PW=W2-pad-10,PH=H-26,L=h.levels,mx=L[L.length-1]||1;
-  const sx=v=>pad+v/mx*PW,sy=v=>8+(1-v)*PH; ctx.strokeStyle='#262c38'; ctx.beginPath(); ctx.moveTo(pad,8); ctx.lineTo(pad,8+PH); ctx.lineTo(pad+PW,8+PH); ctx.stroke();
-  const line=(a,c)=>{ ctx.strokeStyle=c; ctx.lineWidth=2; ctx.beginPath(); L.forEach((l,i)=>{ const x=sx(l),y=sy(a[i]); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke(); }; line(h.off,'#ff6b6b'); line(h.target,'#4fe3bf');
-  ctx.fillStyle='#8890a1'; ctx.font='10px ui-monospace'; ctx.fillText('Tmax →',pad+PW-46,H-4); ctx.fillStyle='#4fe3bf'; ctx.fillText(LANG==='ko'?'표적':'target',pad+4,16); ctx.fillStyle='#ff6b6b'; ctx.fillText(LANG==='ko'?'비표적':'off',pad+44,16); }
-function drawPareto(P,best){ const cv=document.getElementById('pareto'),W2=cv.width=cv.clientWidth,H=cv.height,ctx=cv.getContext('2d'); ctx.clearRect(0,0,W2,H);
-  const m1=P.map(p=>p.M1),m2=P.map(p=>p.M2),z1=Math.max(...P.map(p=>p.M3)),x0=Math.min(...m1),x1=Math.max(...m1),y0=Math.min(...m2),y1=Math.max(...m2),pad=34;
-  const sx=v=>pad+(v-x0)/((x1-x0)||1)*(W2-pad-12),sy=v=>H-22-(v-y0)/((y1-y0)||1)*(H-40);
-  ctx.strokeStyle='#262c38'; ctx.beginPath(); ctx.moveTo(pad,8); ctx.lineTo(pad,H-22); ctx.lineTo(W2-8,H-22); ctx.stroke();
-  ctx.fillStyle='#8890a1'; ctx.font='10px ui-monospace'; ctx.fillText('M1→',W2-30,H-6); ctx.save(); ctx.translate(11,52); ctx.rotate(-Math.PI/2); ctx.fillText('M2→',0,0); ctx.restore();
-  P.forEach(p=>{ const c=inferno(1-p.M3/(z1||1)); ctx.fillStyle=`rgb(${c.map(v=>v*255|0)})`; ctx.beginPath(); ctx.arc(sx(p.M1),sy(p.M2),3.6,0,7); ctx.fill(); });
-  if(best){ ctx.fillStyle='#7b8cff'; ctx.beginPath(); ctx.arc(sx(best.M1),sy(best.M2),6,0,7); ctx.fill(); ctx.strokeStyle='#fff'; ctx.lineWidth=1.4; ctx.stroke(); } }
-
+//  캔버스 비트맵은 `drawHist` 를 부를 때만 잡힌다 → 창 크기를 바꾸면 늘어난 그림이 남는다.
+//  `cv.width=` 는 캔버스 전체 재할당이라 디바운스가 필수다. 마지막 데이터를 들고 있다가 다시 그린다.
+let HIST_LAST=null, histRT=0;
+addEventListener('resize',()=>{ if(!HIST_LAST) return; clearTimeout(histRT); histRT=setTimeout(()=>drawHist(HIST_LAST),150); });
+function drawHist(h){ HIST_LAST=h; const cv=document.getElementById('hist'),W2=cv.width=cv.clientWidth,H=cv.height,ctx=cv.getContext('2d'); ctx.clearRect(0,0,W2,H); const pad=34,PW=W2-pad-10,PH=H-26,L=h.levels,mx=L[L.length-1]||1;
+  const sx=v=>pad+v/mx*PW,sy=v=>8+(1-v)*PH; ctx.strokeStyle=PAL.border; ctx.beginPath(); ctx.moveTo(pad,8); ctx.lineTo(pad,8+PH); ctx.lineTo(pad+PW,8+PH); ctx.stroke();
+  //  ★축에 숫자를 붙인다 — 그 전엔 두 축 어디에도 눈금이 없어 "어느 세기에서 갈리는가" 를
+  //  그림에서 읽을 수 없었다. y 는 부피 비율(0/50/100 %), x 는 Tmax 4눈금.
+  ctx.font='9px ui-monospace'; ctx.textBaseline='middle';
+  [0,.5,1].forEach(v=>{ const y=sy(v);
+    ctx.strokeStyle=PAL.border2; ctx.globalAlpha=v===0?0:.5; ctx.beginPath();
+    ctx.moveTo(pad,y); ctx.lineTo(pad+PW,y); ctx.stroke(); ctx.globalAlpha=1;
+    ctx.fillStyle=PAL.faint; ctx.textAlign='right'; ctx.fillText((v*100).toFixed(0)+'%',pad-4,y); });
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  [0,.25,.5,.75,1].forEach(v=>{ ctx.fillStyle=PAL.faint;
+    ctx.fillText((mx*v).toPrecision(2),sx(mx*v),8+PH+4); });
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  const line=(a,c)=>{ ctx.strokeStyle=c; ctx.lineWidth=2; ctx.beginPath(); L.forEach((l,i)=>{ const x=sx(l),y=sy(a[i]); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke(); }; line(h.off,PAL.anode); line(h.target,PAL.mint);
+  ctx.fillStyle=PAL.dim; ctx.font='10px ui-monospace'; ctx.fillText('Tmax →',pad+PW-46,H-4); ctx.fillStyle=PAL.mint; ctx.fillText(LANG==='ko'?'표적':'target',pad+4,16); ctx.fillStyle=PAL.anode; ctx.fillText(LANG==='ko'?'비표적':'off',pad+44,16); }
 function csvcell(v){ v=String(v); return /[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v; }
 function saveResult(){ if(!LAST)return; const b=LAST.best,dist=(('currents'in b)||b.timemux),L=LAST,rows=[];
   const kv=(k,v)=>rows.push(csvcell(k)+','+csvcell(v));

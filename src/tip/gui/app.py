@@ -44,6 +44,23 @@ from tip.orch import JobStore                            # noqa: E402
 from tip.orch import s4l as ORCH_S4L                     # noqa: E402
 
 PORT = 8765
+
+#  ★This module is MIDA-specific below this line and cannot yet serve another head.
+#  Everything after it — `hipmask1010`, the grey-matter label 75, the deep-target coordinates,
+#  the mirror about x = -27, the `masks/mida` manifest — is the human phantom. Loaded under
+#  `TIP_MODEL=rat` it still starts and still draws a target list, and every entry in that list
+#  is a human structure at human coordinates sitting outside the rat brain. Silently wrong is
+#  the one outcome this project refuses, so refuse to start instead. The rat leadfield itself
+#  is fine and is reachable from `tip.leadfield` / `tools/analyze/rat_check.py`.
+if C.MODEL_NAME != "human":
+    raise SystemExit(
+        f"[TI Planner] the GUI is written against the MIDA human head and has no target list "
+        f"for model {C.MODEL_NAME!r}.\n"
+        f"  Its masks, tissue labels and target coordinates are all MIDA's; running it here "
+        f"would show human structures at human coordinates.\n"
+        f"  Use TIP_MODEL=human for the GUI, or the model-agnostic API "
+        f"(tip.leadfield / tip.targets / tools/analyze/rat_check.py) for {C.MODEL_NAME!r}.")
+
 print("[TI Planner] loading leadfield...", flush=True)
 LF = LeadField()
 HIP = np.load(C.inputs("hipmask1010.npy"))
@@ -52,7 +69,7 @@ try:
 except Exception:
     THAL = None
 HAX = np.load(C.inputs("hipaxes1010.npz"))
-BL = np.load(C.inputs("blabel1010.npy"))
+BL = np.load(C.inputs(C.BLABEL_FILE))
 COORDS = LF.coords()
 GMIN = COORDS.min(0)                                  # grid origin and spacing (target contours)
 GS = np.array([np.median(np.diff(np.unique(COORDS[:, k]))) for k in range(3)])
@@ -658,6 +675,13 @@ class H(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path == "/" or u.path.startswith("/index"):
             self._send(open(INDEX, encoding="utf-8").read(), "text/html; charset=utf-8")
+        elif u.path.startswith("/vendor/"):
+            #  three.js 를 CDN 대신 여기서 준다 — 인터넷이 막힌 자리에서도 3D 가 뜬다.
+            #  basename 만 쓴다: "/vendor/../.." 같은 경로로 저장소 밖을 읽지 못하게.
+            f = os.path.join(HERE, "vendor", os.path.basename(u.path))
+            if not os.path.isfile(f):
+                self._send({"error": "not found"}, code=404); return
+            self._send(open(f, encoding="utf-8").read(), "application/javascript; charset=utf-8")
         elif u.path == "/api/init":
             self._send(dict(
                 electrodes=[{"name": e, "xyz": [round(float(v), 1) for v in LF.pos[e]]}
