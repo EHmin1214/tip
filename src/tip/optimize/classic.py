@@ -42,22 +42,32 @@ def _cnorm(r, budget=None):
                                                                           comparison
     ⚠ Passing `budget=` explicitly **always** means a total-current budget (dual TI uses that
     to split a budget per system).
-    The per-electrode cap IMAX applies in both cases."""
+    The per-electrode cap IMAX applies in both cases.
+
+    ★The rule comes from `protocol.current()` — the harness declares it with
+    `with protocol.use(...)`, and with nothing declared it falls back to `config`, so every
+    pre-existing caller behaves exactly as before."""
+    from .. import protocol as _P
+    p = _P.current()
     r = float(r)
-    cap = IMAX / max(1.0, r)
-    if budget is None and getattr(_C, "CURRENT_NORM", "total") == "max_channel":
-        return min(_C.ICH_MAX / max(1.0, r), cap)
-    b = ITOTAL if budget is None else budget
+    imax = IMAX if p.imax is None else p.imax
+    cap = imax / max(1.0, r)
+    if budget is None and p.current_norm == "max_channel":
+        return min(p.budget / max(1.0, r), cap)
+    b = (p.budget if p.current_norm == "total" else ITOTAL) if budget is None else budget
     return min(b / (1.0 + r), cap)
 
 
 def _cnorm_vec(r, budget=None):
     """Vectorised `_cnorm` over a batch of r."""
+    from .. import protocol as _P
+    p = _P.current()
     r = np.asarray(r, float)
-    cap = IMAX / np.maximum(1.0, r)
-    if budget is None and getattr(_C, "CURRENT_NORM", "total") == "max_channel":
-        return np.minimum(_C.ICH_MAX / np.maximum(1.0, r), cap)
-    b = ITOTAL if budget is None else budget
+    imax = IMAX if p.imax is None else p.imax
+    cap = imax / np.maximum(1.0, r)
+    if budget is None and p.current_norm == "max_channel":
+        return np.minimum(p.budget / np.maximum(1.0, r), cap)
+    b = (p.budget if p.current_norm == "total" else ITOTAL) if budget is None else budget
     return np.minimum(b / (1.0 + r), cap)
 
 

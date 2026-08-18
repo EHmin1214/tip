@@ -21,6 +21,7 @@ import scipy.sparse as sp
 from scipy.optimize import linprog, minimize
 from scipy.linalg import eigh
 from .. import ti, metrics
+from .. import config as C
 from ..config import ITOTAL
 
 
@@ -41,7 +42,19 @@ def focality_bound(at, ao):
     return float(w[-1]), V[:, -1]
 
 
-def optimize_gevd(lf, target, electrodes, direction, Imax=2.0, off_subsample=8000,
+#  ★2026-08-18: `Imax=2.0` 이 **기본 인자에 하드코딩**돼 있었다. `config.IMAX` 를 바꿔도
+#  반영되지 않아 이 방법만 조용히 다른 규약으로 돌았다 — 방법 비교에서 가장 위험한 종류의 결함이다.
+#  이제 `None` 이면 프로토콜에서 읽는다(선언이 없으면 config 로 떨어져 기존 동작 유지).
+def _caps(Imax=None):
+    """(전극당 상한 mA, 총전류 예산 mA) — 프로토콜이 단일 진실."""
+    from .. import protocol as _P
+    p = _P.current()
+    cap = (p.imax if p.imax is not None else C.IMAX) if Imax is None else float(Imax)
+    tot = p.budget if p.current_norm == "total" else C.ITOTAL
+    return float(cap), float(tot)
+
+
+def optimize_gevd(lf, target, electrodes, direction, Imax=None, off_subsample=8000,
                   single_freq=False, select_k=None, seeds=6, iters=20, seed=42, verbose=True):
     """
     Distributed TI: maximise the focality M2 of the modulation envelope along n (a
@@ -108,7 +121,8 @@ def optimize_gevd(lf, target, electrodes, direction, Imax=2.0, off_subsample=800
                              off_subsample=off_subsample, single_freq=single_freq,
                              seeds=seeds, iters=iters, seed=seed, verbose=verbose)
     # Normalise to physical currents. Focality is scale-invariant; this is for the absolute M1.
-    sc = Imax / max(np.abs(c0).max(), np.abs(c1).max(), 1e-9)
+    _cap, _ = _caps(Imax)
+    sc = _cap / max(np.abs(c0).max(), np.abs(c1).max(), 1e-9)
     c0 *= sc; c1 *= sc
     Ft3 = np.stack([lf.elec_field(e, tgt) for e in electrodes])
     Fo3 = np.stack([lf.elec_field(e, off) for e in electrodes])
@@ -165,7 +179,7 @@ def optimize_distributed(lf, target, electrodes, direction=None, select_k=None,
     return best
 
 
-def _distributed_legacy(lf, target, electrodes, direction=None, Imax=2.0,
+def _distributed_legacy(lf, target, electrodes, direction=None, Imax=None,
                         off_subsample=3000, tgt_lp=400, off_lp=800, restarts=5, maxiter=60,
                         select_k=None, weights=(0.5, 0.5, 0.5), pctl=50, seed=42, verbose=True):
     """
@@ -227,7 +241,8 @@ def _distributed_legacy(lf, target, electrodes, direction=None, Imax=2.0,
         "pour in more current"."""
         itot = 0.5 * (np.abs(c0).sum() + np.abs(c1).sum())
         mx = max(np.abs(c0).max(), np.abs(c1).max(), 1e-9)
-        s = min(ITOTAL / max(itot, 1e-12), Imax / mx)
+        _cap, _tot = _caps(Imax)
+        s = min(_tot / max(itot, 1e-12), _cap / mx)
         return c0 * s, c1 * s
 
     # Inner objective: strength (directional M1) plus selectivity (target directional over
@@ -253,7 +268,8 @@ def _distributed_legacy(lf, target, electrodes, direction=None, Imax=2.0,
         return (m1, m2, m3), C0, C1
 
     cons = [{"type": "eq", "fun": (lambda x, i=i: x[i * K:(i + 1) * K].sum())} for i in (0, 1)]
-    bnds = [(-Imax, Imax)] * (2 * K)
+    _cap, _ = _caps(Imax)
+    bnds = [(-_cap, _cap)] * (2 * K)
     cand = [(cstar.copy(), cstar.copy())]   # fallback = the directional GEVD solution
     for s in range(restarts):
         x0 = np.concatenate([cstar, cstar])

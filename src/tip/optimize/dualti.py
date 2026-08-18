@@ -27,7 +27,27 @@ from ..config import ITOTAL
 from .classic import _ratio_grid, _cnorm, _cnorm_vec, channel_currents
 from .multichannel import _gevd3d
 
-DUAL_BUDGET = ITOTAL / 2.0   # per-system current budget (the two together make ITOTAL)
+#  ★per-system budget. Was a module constant `ITOTAL/2`, which silently forced a total-current
+#  rule even when `config.CURRENT_NORM` said otherwise — the two systems then drew 1.00 mA
+#  while classic drew 2.00 mA under the same "fair" table (measured 2026-08-18).
+#  Now it follows `protocol.current()`: under a total rule each system gets half the budget;
+#  under `max_channel` there is no total to split, so `None` lets `_cnorm` pin the larger
+#  channel per system, exactly as classic does.
+def dual_budget():
+    """Per-system current budget, or None when the rule pins channels instead of a total."""
+    from .. import protocol as _P
+    p = _P.current()
+    return (p.budget / 2.0) if p.current_norm == "total" else None
+
+
+class _DualBudgetCompat(float):
+    """Backwards compatibility: `DUAL_BUDGET` was imported as a float by gui/plan/benchmark.
+
+    Those call sites pass it straight to `channel_currents(r, DUAL_BUDGET)`. Keeping it a real
+    float keeps them working, while `dual_budget()` is the value the optimiser now uses."""
+
+
+DUAL_BUDGET = _DualBudgetCompat(ITOTAL / 2.0)
 
 
 # ---- app.py compatibility: the combined envelope, for reports and the 3D field ----
@@ -35,7 +55,7 @@ def _cfields(lf, m, idx):
     """The two channel fields of one dual-system montage, normalised to a per-system current
     of ITOTAL/2."""
     a, b = m["ch1"]; c, d = m["ch2"]; r = m.get("ratio", 1.0)
-    i1, i2 = channel_currents(r, DUAL_BUDGET)
+    i1, i2 = channel_currents(r, dual_budget())
     return (i1 * (lf.elec_field(a, idx) - lf.elec_field(b, idx)),
             i2 * (lf.elec_field(c, idx) - lf.elec_field(d, idx)))
 
@@ -49,7 +69,7 @@ def combined_env(lf, best, idx):
 
 def _env_diff(lf, ch1, ch2, r, idx):
     """Envelope of a single dual system, normalised to a per-system current of ITOTAL/2."""
-    i1, i2 = channel_currents(r, DUAL_BUDGET)
+    i1, i2 = channel_currents(r, dual_budget())
     return ti.tmax(i1 * (lf.elec_field(ch1[0], idx) - lf.elec_field(ch1[1], idx)),
                    i2 * (lf.elec_field(ch2[0], idx) - lf.elec_field(ch2[1], idx)))
 
@@ -108,7 +128,7 @@ def optimize_dual_ti(lf, target, allowed=None, weights=(0.5, 0.5, 0.5), pctl=50,
     R = len(ratios)
     M1g = np.empty((M, R)); M2g = np.empty((M, R)); M3g = np.empty((M, R))
     for ri, r in enumerate(ratios):
-        i1 = _cnorm(r, DUAL_BUDGET); i2 = r * i1
+        i1 = _cnorm(r, dual_budget()); i2 = r * i1
         et = ti.tmax(i1 * D1t, i2 * D2t); eo = ti.tmax(i1 * D1o, i2 * D2o)   # (M,Nt),(M,No)
         M1g[:, ri] = np.median(et, axis=1)
         rt = np.sqrt((et ** 2).mean(1)); ro = np.sqrt((eo ** 2).mean(1))
@@ -120,7 +140,7 @@ def optimize_dual_ti(lf, target, allowed=None, weights=(0.5, 0.5, 0.5), pctl=50,
     ar = np.arange(M)
     M1solo = M1g[ar, ridx]; M2solo = M2g[ar, ridx]
     # Envelopes at the chosen ratio, (M, Nt) and (M, No), computed in one pass
-    i1 = _cnorm_vec(rbest, DUAL_BUDGET); i2 = rbest * i1
+    i1 = _cnorm_vec(rbest, dual_budget()); i2 = rbest * i1
     ET = ti.tmax(i1[:, None, None] * D1t, i2[:, None, None] * D2t)   # (M, Nt)
     EO = ti.tmax(i1[:, None, None] * D1o, i2[:, None, None] * D2o)   # (M, No)
     masks = np.fromiter(((1 << m[0][0]) | (1 << m[0][1]) | (1 << m[1][0]) | (1 << m[1][1]) for m in metas), int, M)
@@ -174,7 +194,7 @@ def optimize_dual_ti(lf, target, allowed=None, weights=(0.5, 0.5, 0.5), pctl=50,
                           lf.elec_field(m["ch1"][0], of) - lf.elec_field(m["ch1"][1], of),
                           lf.elec_field(m["ch2"][0], of) - lf.elec_field(m["ch2"][1], of))
         _, _, d1t, d2t, d1o, d2o = cache[tag]
-        i1, i2 = channel_currents(r, DUAL_BUDGET)
+        i1, i2 = channel_currents(r, dual_budget())
         return ti.tmax(i1 * d1t, i2 * d2t), ti.tmax(i1 * d1o, i2 * d2o)
 
     def _neg_wp(x):

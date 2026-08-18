@@ -53,7 +53,10 @@ def BASE_SMASH():
 #  ★The default output is the **deployed** directory. `rebuild_solve_batch.OUT` defaults to
 #    a scratch folder; leaving it would point the GUI at something that can be wiped, and it
 #    would then offer to re-solve electrodes that are already done ("14 missing"). Happened.
-DEFAULT_OUT = os.path.join(HERE, "data", "leadfield_rebuild")
+#  ⚠ 2026-08-13 저장소 재편으로 `data/` 는 없어졌고 입력은 `inputs/` 아래다.
+#    그리고 2026-08-14 기본 세트가 3 cm² 전극으로 바뀌었다 — `MODEL.leadfield_dir` 를 따라가야
+#    GUI 가 "몇 개 없음" 을 잘못 세지 않는다(옛 상수를 남겨 두면 그 사고가 난다).
+DEFAULT_OUT = os.path.join(C.LEADFIELD_ROOT, C.MODEL.leadfield_dir)
 
 #  matches: "[08-13 00:10] [7/12] PO1 done · 132s · I=1.0577 mA · eta 11 min"
 #  ⚠ These patterns are paired with the output of `tools/s4l/add_electrodes.py`.

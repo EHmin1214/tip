@@ -46,7 +46,11 @@ def optimize_huang(lf, target, allowed, n, pmax_rel=0.25, select_k=32,
     Returns dict(huang=True, els, s1, s2, i_total, ...), i.e. the two carrier current
     distributions."""
     n = np.asarray(n, float); n = n / (np.linalg.norm(n) + 1e-30)
-    budget = C.ITOTAL if budget is None else budget
+    #  ★프로토콜이 단일 진실. 예전엔 `C.ITOTAL` 을 직접 읽어, 규약을 바꿔도 이 방법만
+    #  총전류 규약으로 고정돼 있었다.
+    from .. import protocol as _P
+    _p = _P.current()
+    budget = (_p.budget if _p.current_norm == "total" else C.ITOTAL) if budget is None else budget
     pool = [e for e in allowed if lf.has(e)]
     els = pool if len(pool) <= select_k else _gevd_pool(lf, target, pool, select_k)
     K = len(els)
