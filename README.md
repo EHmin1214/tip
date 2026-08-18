@@ -74,6 +74,31 @@ tip/
 └─ docs/               design notes, scale audit, pipeline design
 ```
 
+**Head models are defined in exactly one place: [src/tip/models.py](src/tip/models.py).**
+Grid, masks, electrode pool, tissue labels, midline and current limits all change together
+when you swap the head, so they live on one descriptor. Pick one with `TIP_MODEL`:
+
+```bash
+TIP_MODEL=human python -m tip.gui.app   # MIDA human head — the default
+TIP_MODEL=rat   python -m tip.gui.app   # IT'IS NeuroRat V4.0, 37 electrodes, reference PO8
+TIP_MODEL=mouse python -m tip.gui.app   # IT'IS B6C3F1N_M_3w mouse — parked, no geometry
+```
+
+Adding a model means adding one `Model(...)` entry. Anything not yet measured for a model is
+left `None` and fails loudly when something reaches for it — a plausible placeholder that
+quietly produces numbers is worse than a crash. Note that `midline_x` alone does not say
+which side is which: MIDA puts the left hemisphere at x < midline, the mouse phantom at
+x > midline, so use `config.MODEL.is_left(x)` rather than comparing by hand.
+
+The rat's head is tilted ~55° to z, so **no coordinate separates its hemispheres**: it
+carries an oblique `midline_normal` / `midline_offset` instead, and `is_left(x)` refuses to
+answer for it. Use `config.MODEL.is_left_pts(coords)`, which handles both kinds. Two things
+to state whenever rat numbers are reported: there is **no reference dataset** for this model
+(tip.lite's CSVs are for their mouse, whose electrode set does not exist here), so validation
+is a consistency check of the pipeline and not of the model; and a lateralised rat target
+carries about **7% of the contralateral structure**, because the phantom's own segmentation
+is asymmetric — see `tools/prep/fit_rat_midplane.py`, which measures it and changes nothing.
+
 **Paths are defined in exactly one place: [src/tip/config.py](src/tip/config.py).**
 Scripts that assemble paths themselves break silently whenever a file moves — that happened here,
 so it is now a rule. To keep the data elsewhere, set `TIP_INPUTS` and `TIP_OUTPUTS`.
@@ -87,11 +112,12 @@ and unpack it at the repository root so the tree looks like this:
 
 ```
 inputs/
-  leadfield/leadfield_rebuild/   default set. 84 electrodes × (1907678, 3) float32   1.8 GB
+  leadfield/leadfield_rebuild_3cm2/  ★default set. 3 cm² electrodes, 84 × (1907678,3)  1.8 GB
+  leadfield/leadfield_rebuild/   same model at 0.5 cm² (the previous default)         1.8 GB
   leadfield/leadfieldF/          legacy set (see the warning below)                  1.3 GB
   leadfield/leadfield_extra/     lower-ring electrodes of the legacy set             229 MB
-  leadfield/leadfield_3cm2/      4 electrodes at 3 cm², the evidence that electrode
-                                 size does not matter                                 92 MB
+  leadfield/leadfield_3cm2/      4 electrodes, from an earlier machine — kept only
+                                 as a historical artefact; do not use                 92 MB
   geometry/                      bmask1010.npy · gaxes1010.npz · pos1010.json …       54 MB
   masks/                         target masks                                         74 MB
   fibers/                        fibre trajectories and fibre leadfields              72 MB
@@ -102,11 +128,19 @@ inputs/
 > Ask a maintainer if you cannot reach it. To keep the data elsewhere, set `TIP_INPUTS`
 > instead of moving it.
 
-**You do not need all of it.** `leadfield/leadfield_rebuild/`, `geometry/` and `masks/` —
-about 1.9 GB — are enough to run everything the UI offers. The other three leadfield sets
-(1.6 GB) exist only to reproduce past comparisons: `leadfieldF` and `leadfield_extra` are the
-legacy set, and `leadfield_3cm2` is the four-electrode evidence that electrode size does not
-matter.
+**You do not need all of it.** `leadfield/leadfield_rebuild_3cm2/`, `geometry/` and `masks/` —
+about 1.9 GB — are enough to run everything the UI offers. The other sets exist only to
+reproduce past comparisons: `leadfieldF` + `leadfield_extra` are the legacy set,
+`leadfield_rebuild` is the same model at 0.5 cm² electrodes (the default until 2026-08-14),
+and `leadfield_3cm2` is a four-electrode fragment from an earlier machine.
+
+> **Electrode size does matter** — the older claim that it does not was disproved on
+> 2026-08-14. Re-solving all 84 electrodes at 3 cm² (the size the actual protocol, tip.lite
+> and its published values all use) moved the agreement with those published values from
+> M1 1.139 / M2 0.956 / M3 1.098 to **1.118 / 0.988 / 1.053**, and cut the montage-selection
+> regret from 29.4% to **10.1%**. The chosen montage itself does not change. Set
+> `TIP_LEADFIELD_DIR=leadfield_rebuild` to go back. Numbers:
+> `outputs/research/metrics_by_region.md`.
 
 **Regenerating it instead.** The leadfields can be rebuilt from the Sim4Life project with
 `tools/s4l/add_electrodes.py` — roughly 2-3 minutes per electrode across 84 electrodes, and it
