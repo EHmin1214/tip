@@ -46,7 +46,7 @@ class Target:
             labels = C.OFF_LABEL_SETS[key]; self.off_def = key
         else:
             labels = tuple(key); self.off_def = str(labels)
-        bl = np.load(_p(lf, "blabel1010.npy"))
+        bl = np.load(_p(lf, C.BLABEL_FILE))
         neural = np.ones(len(bl), bool) if labels is None else np.isin(bl, labels)
         off_mask = neural.copy()
         off_mask[self.target_idx] = False
@@ -77,7 +77,7 @@ class Target:
     @classmethod
     def from_label(cls, lf, label, **kw):
         """Define a target from a tissue label in `blabel` (e.g. hippocampus = 81)."""
-        bl = np.load(_p(lf, "blabel1010.npy"))
+        bl = np.load(_p(lf, C.BLABEL_FILE))
         return cls(lf, np.where(bl == label)[0], **kw)
 
     @classmethod
@@ -89,7 +89,7 @@ class Target:
         d2 = ((coords - c) ** 2).sum(1)
         sel = d2 <= radius_mm ** 2
         if restrict_neural:
-            bl = np.load(_p(lf, "blabel1010.npy"))
+            bl = np.load(_p(lf, C.BLABEL_FILE))
             sel &= np.isin(bl, C.NEURAL_LABELS)
         return cls(lf, np.where(sel)[0], **kw)
 

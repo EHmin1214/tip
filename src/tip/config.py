@@ -68,10 +68,31 @@ def outputs(*parts, mkdir=True):
     return p
 
 
+# ── ★Active head model (2026-08-14) ──────────────────────────────────────
+# Everything that changes when the head changes lives in `models.py`; this module re-exports
+# the selected model's values under their historical names so existing code keeps working.
+# Select with `TIP_MODEL=human|mouse` (default human).
+#
+# ⚠ Read these as `config.N_ELEC`, not `from config import N_ELEC` — attribute access is
+#   late-bound, a from-import freezes the human value at import time.
+from . import models as _models                                       # noqa: E402
+
+MODEL = _models.active()
+MODEL_NAME = MODEL.name
+
+# Geometry file names — these used to be the literals `bmask1010.npy` and friends.
+BMASK_FILE = MODEL.bmask
+GAXES_FILE = MODEL.gaxes
+BLABEL_FILE = MODEL.blabel
+POS_FILE = MODEL.positions
+
 # --- Physical / model constants (validated in FOUNDATION.md and migration §4) ---
-N_ELEC = 60             # electrodes in use (Cz excluded — it is the reference)
-REF_ELEC = "Cz"
-MIDLINE_X = -27.0       # left/right midline (mm)
+N_ELEC = MODEL.n_elec           # electrodes in use (the reference is excluded)
+REF_ELEC = MODEL.ref_elec
+MIDLINE_X = MODEL.midline_x     # left/right midline (mm)
+#  ⚠ The plane alone does not say which side is which: MIDA puts the left hemisphere at
+#    x < midline, the IT'IS mouse phantom at x > midline. Use `config.MODEL.is_left(x)`.
+LEFT_IS_PLUS_X = MODEL.left_is_plus_x
 
 # TI carriers (tip.lite convention: 2000/2100, Δf = 100 Hz).
 # The frequency does not affect envelope amplitude — the solve is quasi-static.
@@ -133,15 +154,20 @@ LEADFIELD_AMP_FIX = 0.5
 # ⚠ Rebuild files are **already normalised to 1 mA**, so neither `unitnorm` nor
 #   `LEADFIELD_AMP_FIX` is applied to them (scale = 1.0). Only the old set needs that.
 LEADFIELD_SET = os.environ.get("TIP_LEADFIELD_SET", "rebuild")
-LEADFIELD_REBUILD_DIR = os.path.join(LEADFIELD_ROOT, "leadfield_rebuild")
+LEADFIELD_REBUILD_DIR = os.path.join(LEADFIELD_ROOT, MODEL.leadfield_dir)
+#  "legacy" = M*.npy columns + enames/unitnorm (the original human pipeline)
+#  "direct" = one {electrode}.npy already normalised to unit current
+LEADFIELD_STYLE = MODEL.leadfield_style
 
 # Direction samples for Tmax (ITIS reference implementation: 120 in-plane directions)
 N_DIR = 120
 
-# Safety / optimisation defaults
-ECAP_DEFAULT = 0.25     # off-target envelope cap (V/m)
-IMAX = 2.0              # per-electrode current cap (mA) — a skin safety constraint
-ITOT = 4.0              # per-channel total current budget (mA)
+# Safety / optimisation defaults — per model, since a mouse head is ~1/30 the diameter and
+# the same current produces a far larger field. `None` means nobody has established it yet;
+# `MODEL.require("ich_max")` then fails loudly instead of inventing a number.
+ECAP_DEFAULT = MODEL.ecap       # off-target envelope cap (V/m)
+IMAX = MODEL.imax               # per-electrode current cap (mA) — a skin safety constraint
+ITOT = 4.0                      # per-channel total current budget (mA)
 
 # ── Total injected current budget (the basis for fair comparison) ────────
 # I_total = Σ(current into + electrodes) = 0.5 · Σ|all electrode currents|. Normalising
@@ -165,7 +191,7 @@ ITOT = 4.0              # per-channel total current budget (mA)
 #   `channel_currents(r, budget=...)`. The GUI slider uses that path.
 ITOTAL = 1.0
 # Per-channel maximum current (the value the larger channel takes under max-channel norm)
-ICH_MAX = 1.0
+ICH_MAX = MODEL.ich_max
 
 # ── ★Current normalisation convention (2026-08-11) ───────────────────────
 # "max_channel" = pin the **larger channel** to ICH_MAX; the smaller one follows the ratio.
@@ -188,24 +214,23 @@ ICH_MAX = 1.0
 #   budget — there the point is splitting a budget per system, which is a different thing.
 CURRENT_NORM = os.environ.get("TIP_CURRENT_NORM", "max_channel")
 
-# Tissue labels (blabel1010.npy)
-LABEL_GM = 75
-LABEL_WM = 131
-LABEL_HIPPO = 81
+# Tissue labels (BLABEL_FILE). Per model — the MIDA numbers below mean nothing in another
+# phantom, and a model that has not been voxelised yet has none at all (hence None).
+LABEL_GM = MODEL.labels.get("gm")
+LABEL_WM = MODEL.labels.get("wm")
+LABEL_HIPPO = MODEL.labels.get("hippocampus")
 # Labels used to restrict a target to neural tissue (`Target.from_sphere(restrict_neural=True)`).
 # **This is not the off-target pool definition** — that is OFF_LABEL_SETS below.
 # tip.lite agreement checks (`validate_tiplite.py`) depend on this, so it stays GM-only.
-NEURAL_LABELS = (LABEL_GM,)
+NEURAL_LABELS = tuple(MODEL.labels[k] for k in MODEL.neural
+                      if MODEL.labels.get(k) is not None)
 
 # ── Off-target pool definition (Target.off_idx) ──────────────────────────
 # 2026-08-05: **the default changed from GM-only to GM ∪ WM.** Reasoning below.
-OFF_LABEL_SETS = {
-    "gm":    (LABEL_GM,),               # old default; for tip.lite reproduction and history
-    "gm_wm": (LABEL_GM, LABEL_WM),      # ★current default
-    "brain": None,                      # every brain voxel incl. deep nuclei; measured
-                                        # identical to gm_wm
-}
-OFF_DEFAULT = "gm_wm"
+# Per model — for the human head the sets are {gm, gm_wm, brain}; the IT'IS mouse phantom has
+# **no white matter at all**, so `gm_wm` there would be a different thing wearing the same name.
+OFF_LABEL_SETS = MODEL.off_sets
+OFF_DEFAULT = MODEL.off_default
 
 # ── ★Why it changed (reproduce with scratchpad_diag/diag_offdef.py) ──────
 # GM-only leaves **981,723 white-matter voxels (51% of the brain)** and every deep nucleus

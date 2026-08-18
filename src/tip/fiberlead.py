@@ -145,7 +145,7 @@ def sample_seeds(lf, n_seeds, exclude_idx=None, margin_mm=12.0, labels=None,
     from scipy.spatial import cKDTree
     from . import config as C
     labels = (C.LABEL_GM, C.LABEL_WM) if labels is None else tuple(labels)
-    lab = np.load(C.inputs("blabel1010.npy"))
+    lab = np.load(C.inputs(C.BLABEL_FILE))
     pool = np.where(np.isin(lab, labels))[0]
     P = lf.coords(pool)
 

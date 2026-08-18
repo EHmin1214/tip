@@ -38,7 +38,7 @@ def voxel_volumes(lf, idx=None):
     Same approach as `make_stn_mask.py` — the product of the axis-coordinate gradients.
     """
     import os
-    g = np.load(C.inputs("gaxes1010.npz"))
+    g = np.load(C.inputs(C.GAXES_FILE))
     dx, dy, dz = (np.gradient(g[k]) for k in ("cx", "cy", "cz"))
     b = lf.bmask if idx is None else lf.bmask[idx]
     return dx[b[:, 0]] * dy[b[:, 1]] * dz[b[:, 2]]
