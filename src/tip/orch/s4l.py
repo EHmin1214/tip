@@ -20,6 +20,7 @@ Note on language: log-matching regexes and the progress strings shown in the UI 
 Korean, because they are paired with the Korean output of the scripts under `tools/`.
 Changing one side alone would silently break progress reporting.
 """
+import glob
 import os
 import re
 import shutil
@@ -41,13 +42,27 @@ ANALYZE = os.path.join(TOOLS, "analyze", "montage_analyze.py")
 #    With one licence seat there is never a concurrent job, so reuse is safe.
 S4L_PROJECTS = os.environ.get("TIP_S4L_PROJECTS") or \
     os.path.join(os.path.dirname(HERE), "s4l_projects")
-MONT_SMASH = os.path.join(S4L_PROJECTS, "montage_gui.smash")
+#  ⚠ **Per head.** A single shared slot would mean a rat montage built where the previous
+#  head left its project. The copy overwrites it, so nothing is silently mixed, but a 1 GB
+#  rat project and a 275 MB human one trading places on every switch is pure churn — and a
+#  slot left half-written by a crash would be the wrong species under the right name.
+def MONT_SMASH():
+    suffix = "" if C.MODEL_NAME == "human" else "_" + C.MODEL_NAME
+    return os.path.join(S4L_PROJECTS, "montage_gui%s.smash" % suffix)
 
 
 def BASE_SMASH():
     """The **source model** each montage project is copied from. Its fingerprint goes into
     the cache key: adding electrodes or changing the grid changes the result for the same
-    montage while the file name stays identical."""
+    montage while the file name stays identical.
+
+    ⚠ Per head. The rat's base is its leadfield project — there is no separate montage
+    project for it, so `s4l_montage.set_pair` turns that project's port mode off before
+    driving a pair.
+    """
+    if C.MODEL_NAME == "rat":
+        return os.environ.get("TIP_RAT_SMASH") or \
+            os.path.join(S4L_PROJECTS, "rat_lf.smash")
     return os.environ.get("TIP_REBUILD_SMASH") or \
         os.path.join(S4L_PROJECTS, "mida1010_rebuild.smash")
 #  ★The default output is the **deployed** directory. `rebuild_solve_batch.OUT` defaults to
@@ -236,7 +251,7 @@ def spawn(names, store, out_dir=None, dry=False):
 
 #  matches: "[s4l_montage] ch1 done · 138s · I=1.3514 mA · E (185, 254, 228, 3)"
 #  ⚠ Paired with the output of `tools/s4l/s4l_montage.py` — change both together.
-_MCH = re.compile(r"(ch[12])\s+done\s+·\s+(\d+)s\s+·\s+I=([\d.]+)\s*mA")
+_MCH = re.compile(r"(ch\d+)\s+done\s+·\s+(\d+)s\s+·\s+I=([\d.]+)\s*mA")
 
 
 def _run_logged(cmd, env, log, store, jid, on_line, timeout_s=7200, kill=True):
@@ -304,20 +319,27 @@ def montage_result(store, jid):
 #    it. Keeping brain-voxel E means switching targets recomputes the metrics in seconds
 #    instead of re-solving for 7 minutes. The full grid (128 MB per channel) is discarded
 #    once the per-tissue statistics and slices have been produced.
+#  ⚠ Listed, not globbed: a stray file in the job folder must never enter the cache.
+#  Four channels because dual TI has four; the montage's own channel count decides which of
+#  these actually exist, and `montage_run` only stores the ones it produced.
 CACHE_FILES = ("analysis.json", "montage.json", "inj.json",
-               "ch1_Ebrain.npy", "ch2_Ebrain.npy",
+               "ch1_Ebrain.npy", "ch2_Ebrain.npy", "ch3_Ebrain.npy", "ch4_Ebrain.npy",
                "slice_sagittal.png", "slice_coronal.png", "slice_axial.png")
 
 
 def _drop_ebrain(out_dir, keep=False):
     """Delete brain-voxel E from the job folder. **The canonical copy lives in the cache**;
     the job folder only ever held a duplicate. Without this, 46 MB accumulates per job —
-    458 MB across ten jobs, measured."""
+    458 MB across ten jobs, measured.
+
+    ⚠ Matched by pattern, not by a fixed ("ch1", "ch2") list. A four-channel dual TI job left
+    ch3/ch4 behind (45.7 MB per job) while the two it knew about were cleaned, so the leak
+    grew exactly on the jobs that produce the most data.
+    """
     if keep:
         return 0
     n = 0
-    for ch in ("ch1", "ch2"):
-        p = os.path.join(out_dir, f"{ch}_Ebrain.npy")
+    for p in glob.glob(os.path.join(out_dir, "ch*_Ebrain.npy")):
         try:
             n += os.path.getsize(p); os.remove(p)
         except OSError:
@@ -357,11 +379,18 @@ def _target_step(out_dir, target, lf_metrics, store, jid):
 
 def montage_run(ch1, ch2, store, jid, ratio=1.0, itotal=2.0,
                 keep_raw=False, timeout_s=5400, use_cache=True,
-                target=None, lf_metrics=None):
+                target=None, lf_metrics=None,
+                pairs=None, currents=None, combine=None, compose="sum", duties=None):
     """Export the montage as a Sim4Life project, **solve it**, and run the whole-head
     analysis.
 
-    ch1 · ch2 : (anode, cathode) electrode-name pairs
+    ch1 · ch2 : (anode, cathode) electrode-name pairs — the classic two-channel montage
+    pairs · currents · combine :
+        the general form. `pairs` is one (anode, cathode) per channel, `currents` the mA for
+        each, and `combine` groups the channels into envelopes ([["ch1","ch2"]] for classic,
+        [["ch1","ch2"],["ch3","ch4"]] for dual TI). Given these, `ch1`/`ch2` are ignored.
+        Each extra channel is another whole-head solve, so dual TI costs about twice the
+        time of classic.
     returns   : the contents of analysis.json
 
     It splits into two stages **because the Python differs**:
@@ -380,7 +409,19 @@ def montage_run(ch1, ch2, store, jid, ratio=1.0, itotal=2.0,
     out_dir = os.path.join(os.path.dirname(store.root), "montage", jid)
     os.makedirs(out_dir, exist_ok=True)
 
-    key, spec = CACHE.montage_key(ch1, ch2, ratio, itotal, smash=BASE_SMASH())
+    #  One shape from here on. The classic call site passes only ch1/ch2, so build the
+    #  general form from it rather than carrying two code paths through the whole function.
+    if pairs is None:
+        pairs = [list(ch1), list(ch2)]
+        currents = None
+        combine = [["ch1", "ch2"]]
+    pairs = [list(p) for p in pairs]
+    names = ["ch%d" % (i + 1) for i in range(len(pairs))]
+    combine = [list(g) for g in (combine or [names[:2]])]
+
+    key, spec = CACHE.montage_key(pairs[0], pairs[1], ratio, itotal, smash=BASE_SMASH(),
+                                  pairs=pairs, currents=currents, combine=combine,
+                                  compose=compose, duties=duties)
     store.update(jid, params=dict(store.get(jid)["params"], cache_key=key))
     hit = CACHE.lookup("montage_s4l", key) if use_cache else None
     if hit:
@@ -416,26 +457,35 @@ def montage_run(ch1, ch2, store, jid, ratio=1.0, itotal=2.0,
             store.update(jid, stage="project created - starting solve", pct=0.40)
         m = _MCH.search(line)
         if m:
-            store.update(jid, pct=0.40 + 0.25 * (1 if m.group(1) == "ch1" else 2),
-                         stage=f"{m.group(1)} solved ({m.group(2)}s · I={m.group(3)} mA)")
+            #  Spread 0.40 -> 0.90 over however many channels this montage has, so a
+            #  four-channel dual TI reports steadily instead of jumping past the end.
+            i = names.index(m.group(1)) + 1 if m.group(1) in names else 1
+            store.update(jid, pct=0.40 + 0.50 * i / max(1, len(names)),
+                         stage=f"{m.group(1)}/{len(names)} solved "
+                               f"({m.group(2)}s · I={m.group(3)} mA)")
         return "=== END" in line
 
     store.update(jid, stage="starting Sim4Life - creating the project (~6 min)", pct=0.02)
-    cmd = [s4l_python(), "-u", MONT, "export", MONT_SMASH,
-           ch1[0], ch1[1], ch2[0], ch2[1],
+    cmd = [s4l_python(), "-u", MONT, "export", MONT_SMASH(),
+           "--pairs", json.dumps(pairs), "--combine", json.dumps(combine),
+           "--compose", str(compose),
            "--ratio", str(ratio), "--itotal", str(itotal), "--solve", out_dir]
+    if currents is not None:
+        cmd += ["--currents", json.dumps([float(c) for c in currents])]
+    if duties is not None:
+        cmd += ["--duties", json.dumps([float(w) for w in duties])]
     _run_logged(cmd, env, log1, store, jid, _on1, timeout_s=timeout_s)
 
     _check_cancel(jid)      # bail out if cancelled mid-solve, so no half result is cached
     #  ⚠ The exit code lies (`os._exit`). **The produced files are the truth.**
-    need = ["ch1_E1V.npy", "ch2_E1V.npy", "inj.json"]
+    need = [f"{n}_E1V.npy" for n in names] + ["inj.json"]
     miss = [f for f in need if not os.path.exists(os.path.join(out_dir, f))]
     if miss:
         raise RuntimeError(f"solve produced nothing: {miss} - log {log1}")
 
     #  Copy the metadata into the job folder so it is **self-contained** — the project slot\n    #  gets overwritten by the next job.
     meta = os.path.join(out_dir, "montage.json")
-    shutil.copy2(MONT_SMASH.replace(".smash", "_montage.json"), meta)
+    shutil.copy2(MONT_SMASH().replace(".smash", "_montage.json"), meta)
 
     # ── Stage 2 — tip: envelope, statistics, slices ──
     store.update(jid, stage="analysing - TI envelope, per-tissue stats, slices", pct=0.90)
@@ -451,7 +501,7 @@ def montage_run(ch1, ch2, store, jid, ratio=1.0, itotal=2.0,
     #  ★Drop the big files. `ch?_E1V.npy` is 128 MB each, i.e. 300 MB per job. What stays is
     #    analysis.json, three slice PNGs, montage.json and inj.json — under 1 MB together.
     if not keep_raw:
-        for f in ("ch1_E1V.npy", "ch2_E1V.npy", "sigma.npy"):
+        for f in [f"{n}_E1V.npy" for n in names] + ["sigma.npy"]:
             try:
                 os.remove(os.path.join(out_dir, f))
             except OSError:
@@ -475,15 +525,19 @@ def montage_run(ch1, ch2, store, jid, ratio=1.0, itotal=2.0,
 
 
 def spawn_montage(ch1, ch2, store, ratio=1.0, itotal=2.0, keep_raw=False,
-                  use_cache=True, target=None, lf_metrics=None):
+                  use_cache=True, target=None, lf_metrics=None,
+                  pairs=None, currents=None, combine=None, compose="sum", duties=None):
     """Create a montage job and run it in the background. Returns the job id.
-    Seconds on a cache hit, about 7 minutes otherwise.
+    Seconds on a cache hit, about 7 minutes per two channels otherwise.
 
     target : `{"target_idx": [...], "off_idx": [...], "name":…, "off_def":…}`.
              Taken from **the very Target** the GUI's `build_target` produced. Two copies of
              target-resolution logic would let the metrics diverge silently.
+    pairs · currents · combine : see `montage_run`. Four pairs in two groups = dual TI.
     """
-    jid = store.create("montage", {"ch1": list(ch1), "ch2": list(ch2),
+    _p = [list(x) for x in (pairs or [ch1, ch2])]
+    jid = store.create("montage", {"ch1": list(_p[0]), "ch2": list(_p[1]),
+                                   "pairs": _p, "n_channels": len(_p),
                                    "ratio": float(ratio), "itotal": float(itotal),
                                    "use_cache": bool(use_cache),
                                    "target": (target or {}).get("name")})
@@ -492,7 +546,9 @@ def spawn_montage(ch1, ch2, store, ratio=1.0, itotal=2.0, keep_raw=False,
         try:
             montage_run(ch1, ch2, store, jid, ratio=ratio, itotal=itotal,
                         keep_raw=keep_raw, use_cache=use_cache,
-                        target=target, lf_metrics=lf_metrics)
+                        target=target, lf_metrics=lf_metrics,
+                        pairs=pairs, currents=currents, combine=combine,
+                        compose=compose, duties=duties)
         except Cancelled:
             #  Cancellation is **not an error.** Filling `error` would show it as a red\n            #  failure in the UI.
             store.update(jid, done=True, pct=1.0, stage="cancelled",

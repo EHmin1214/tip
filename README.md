@@ -58,7 +58,7 @@ tip/
 │   ├─ analyze/          solver output → per-tissue statistics + slice images
 │   └─ prep/             build inputs (rasterise masks, extract fibre tracts, …)
 │
-├─ inputs/             ★read-only, not reproducible, git-ignored (3.6 GB)
+├─ inputs/             ★read-only, not reproducible, git-ignored (7.0 GB, two heads)
 │   ├─ leadfield/        four sets of per-electrode 1 mA solutions
 │   ├─ geometry/         brain voxel mask · grid axes · electrode positions
 │   ├─ masks/            target masks
@@ -99,6 +99,28 @@ is a consistency check of the pipeline and not of the model; and a lateralised r
 carries about **7% of the contralateral structure**, because the phantom's own segmentation
 is asymmetric — see `tools/prep/fit_rat_midplane.py`, which measures it and changes nothing.
 
+**Switching head inside the GUI.** The dropdown in the header calls `POST /api/model`, which
+runs `config.use_model()` and rebuilds everything derived from the head; the page then
+reloads, because electrodes, targets, point cloud and 3D scene all belong to the previous
+one and swapping them piecemeal would silently mix two heads on screen. Two rules keep this
+honest, and breaking either reintroduces exactly the bug this replaced:
+
+- **Read `config.X` late.** A `from tip.config import ICH_MAX` freezes the human value and
+  survives the switch. `config.use_model()` refuses to run if a model-derived constant was
+  added above it and not rebound — the check reads this file's own source, so it cannot go
+  stale.
+- **The stimulation current is a protocol choice, not a property of the head.** Current is
+  first order in Tmax — it scales M1 exactly and leaves M2, M3 and every ranking untouched —
+  so a wrong value does not look wrong anywhere, it just makes every absolute number wrong.
+  MIDA's 1.0 mA is the established tip.lite convention. The rat's 0.1 mA is **an operator's
+  working value**, not an established one, so `Model.ich_established` is false for it and the
+  panel says so under the field. Quote that current whenever a rat field is reported.
+
+Verified end to end: human → rat → human returns a **bit-identical** human result, doubling
+the rat current multiplies M1 by exactly 2.0000 and M2/M3 by 1.0000, and the rat refuses to
+run with no current set. Run a second instance on another port with `TIP_GUI_PORT=8799` —
+on Windows two servers will both bind 8765 and the older one silently wins.
+
 **Paths are defined in exactly one place: [src/tip/config.py](src/tip/config.py).**
 Scripts that assemble paths themselves break silently whenever a file moves — that happened here,
 so it is now a rule. To keep the data elsewhere, set `TIP_INPUTS` and `TIP_OUTPUTS`.
@@ -107,7 +129,7 @@ so it is now a rule. To keep the data elsewhere, set `TIP_INPUTS` and `TIP_OUTPU
 
 ## Getting the data
 
-`inputs/` is 3.6 GB and is deliberately not in the repository. Download it from the team share
+`inputs/` is 7.0 GB and is deliberately not in the repository. Download it from the team share
 and unpack it at the repository root so the tree looks like this:
 
 ```
@@ -118,8 +140,15 @@ inputs/
   leadfield/leadfield_extra/     lower-ring electrodes of the legacy set             229 MB
   leadfield/leadfield_3cm2/      4 electrodes, from an earlier machine — kept only
                                  as a historical artefact; do not use                 92 MB
-  geometry/                      bmask1010.npy · gaxes1010.npz · pos1010.json …       54 MB
-  masks/                         target masks                                         74 MB
+  leadfield/leadfield_rat_float/ ★rat default. 37 × (1904254,3)                      807 MB
+  leadfield/leadfield_rat/       the rat's first solve — wrong boundary condition,
+                                 kept only to reproduce numbers from before
+                                 2026-08-20 (see below)                              807 MB
+  geometry/                      bmask1010.npy · gaxes1010.npz · pos1010.json … and
+                                 the rat's bmask_rat / gaxes_rat / blabel_rat /
+                                 pos_rat / labels_rat                                 78 MB
+  masks/                         target masks (human; the rat builds its targets
+                                 from tissue labels, so it needs none)                74 MB
   fibers/                        fibre trajectories and fibre leadfields              72 MB
 ```
 
@@ -129,10 +158,12 @@ inputs/
 > instead of moving it.
 
 **You do not need all of it.** `leadfield/leadfield_rebuild_3cm2/`, `geometry/` and `masks/` —
-about 1.9 GB — are enough to run everything the UI offers. The other sets exist only to
+about 1.9 GB — are enough to run everything the UI offers on the human head, and
+`leadfield/leadfield_rat_float/` plus `geometry/` adds the rat. The other sets exist only to
 reproduce past comparisons: `leadfieldF` + `leadfield_extra` are the legacy set,
 `leadfield_rebuild` is the same model at 0.5 cm² electrodes (the default until 2026-08-14),
-and `leadfield_3cm2` is a four-electrode fragment from an earlier machine.
+`leadfield_3cm2` is a four-electrode fragment from an earlier machine, and `leadfield_rat`
+is the rat's superseded first solve.
 
 > **Electrode size does matter** — the older claim that it does not was disproved on
 > 2026-08-14. Re-solving all 84 electrodes at 3 cm² (the size the actual protocol, tip.lite
@@ -141,6 +172,26 @@ and `leadfield_3cm2` is a four-electrode fragment from an earlier machine.
 > regret from 29.4% to **10.1%**. The chosen montage itself does not change. Set
 > `TIP_LEADFIELD_DIR=leadfield_rebuild` to go back. Numbers:
 > `outputs/research/metrics_by_region.md`.
+
+> **The rat's leadfield had to be re-solved under a different boundary condition** —
+> 2026-08-20. Its first set was solved in Sim4Life's EM LF **port mode**: basis *k* = electrode
+> *k* at 1 V with **all 36 others held at 0 V**. A real montage drives one pair and leaves the
+> rest **floating**, and 36 shorted PEC pins on the scalp are a low-impedance path across the
+> head that no experiment has. It drew **1.69–3.73×** the current at 1 V (median 2.27×), so
+> the field per mA came out that much too small — no single scale factor could repair it.
+> Against a direct Sim4Life solve of `O1-C5 | PO3-AF3` (left hippocampus, 0.1 mA):
+>
+> | | M1 | M2 | M3 |
+> |---|---|---|---|
+> | Sim4Life (ground truth) | 1.2494 | 1.9991 | 10.477 % |
+> | `leadfield_rat` (port mode) | 0.6807 — **45 % low** | 2.1653 | 9.536 |
+> | `leadfield_rat_float` (default) | **1.2485** | **1.9992** | **10.505** |
+>
+> Every absolute rat V/m published before that date is about **1.8× low**; M2, M3 and montage
+> rankings barely moved. Go back with `TIP_RAT_LEADFIELD_DIR=leadfield_rat` — a **separate**
+> variable from the human's, because both are read once at import and a shared name would
+> quietly point the other head at a set that is not its own. Regenerate with
+> `tools/s4l/rat_lf_float.py` (≈ 5 min per electrode, 37 electrodes).
 
 **Regenerating it instead.** The leadfields can be rebuilt from the Sim4Life project with
 `tools/s4l/add_electrodes.py` — roughly 2-3 minutes per electrode across 84 electrodes, and it
@@ -151,6 +202,8 @@ Check it loaded:
 ```bash
 python -c "import sys;sys.path.insert(0,'src');from tip import LeadField;lf=LeadField();print(len(lf.names),'electrodes',lf.set_name)"
 # → 84 electrodes rebuild
+TIP_MODEL=rat python -c "import sys;sys.path.insert(0,'src');from tip import LeadField;lf=LeadField();print(len(lf.names),'electrodes',lf.set_name)"
+# → 37 electrodes leadfield_rat_float
 ```
 
 > ⚠ **The two leadfield sets are not on the same scale.** Per unit current the legacy
@@ -249,11 +302,21 @@ leadfield values, together with a per-structure breakdown of **where** the stimu
 lands — the same threshold M3 uses, split by anatomical structure.
 
 **Consistency check.** For the same montage, leadfield superposition and the Sim4Life re-solve
-agree to a spatial correlation of **0.99997**. M2 and M3 match within **1%**; only M1 differs
-(0.975–1.022, sign varies by montage). Since M2 and M3 are dimensionless ratios, the residual is
-a pure scale factor — a discretisation bias in the current normalisation, not physics. Note that
-this validates superposition and the extraction chain, **not the head model**: both paths solve
-the same model.
+agree to a spatial correlation of **0.99997** on the human head. M2 and M3 match within **1%**;
+only M1 differs (0.975–1.022, sign varies by montage). Since M2 and M3 are dimensionless ratios,
+the residual is a pure scale factor — a discretisation bias in the current normalisation, not
+physics. Note that this validates superposition and the extraction chain, **not the head
+model**: both paths solve the same model.
+
+The rat reaches the same standard, but only since 2026-08-20: M1 −0.1%, M2 +0.0%, M3 +0.3% on
+`O1-C5 | PO3-AF3`. Before that its leadfield was solved with every other electrode grounded and
+M1 came out **45% low** — see the boundary-condition note under [Getting the data](#getting-the-data).
+This check is the rat's **only** validation, since no reference dataset exists for that head, so
+it is worth redoing after any change to its solve. The easy way is **▶ Send to Sim4Life** in the
+UI, which re-solves the montage and prints the leadfield and Sim4Life metrics side by side — that
+is how the numbers above were obtained. `tools/s4l/rat_montage_check.py` does the same for a
+single pair outside the UI, but it needs the Sim4Life interpreter (for `h5py` and `s4l_v1`) and
+a montage you have already solved directly; `tools/s4l/RAT_MONTAGE_RUNBOOK.md` walks through it.
 
 ### Result cache
 

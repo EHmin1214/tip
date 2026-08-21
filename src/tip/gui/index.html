@@ -99,6 +99,7 @@
   header b{ font-weight:var(--w-bold); font-size:var(--f-lg); } .sp{ flex:1; } .status{ font-family:var(--mono); font-size:var(--f-sm); color:var(--dim); }
   .lang{ background:var(--surface2); border:1px solid var(--border2); color:var(--dim); border-radius:var(--r2); padding:6px 12px; cursor:pointer; font-size:var(--f-sm); font-weight:var(--w-semi); }
   .lang{ transition:color .12s, border-color .12s; }
+  #modelsel:disabled{ opacity:.5; cursor:progress; }
   .lang:hover{ color:var(--accent); border-color:var(--accent); }
   .controls{ border-right:1px solid var(--border); overflow-y:auto; padding:12px 14px; background:var(--surface); }
   .stage{ overflow:hidden; display:grid; grid-template-rows:minmax(0,1.4fr) minmax(0,1fr); }
@@ -263,6 +264,15 @@
   /* ★파생값 — 컬러바 오른쪽 끝에서 라벨만큼 더 안쪽. 손으로 30px 을 쓰면 --vpad 를 바꿀 때 어긋난다 */
   .cbar-l{ position:absolute; right:calc(var(--vpad) + var(--cbar-w) + var(--s1));
     font-family:var(--mono); font-size:var(--f-2xs); color:var(--dim); display:none; text-shadow:0 1px 3px rgba(0,0,0,.75); }
+  /* ★홈 버튼 — 좌표축 gizmo 바로 위에 붙는다. 자리는 렌더 루프에서 gizmo 와 **같은 계산**으로
+     맞춘다(컬러바 폭·--vpad 를 바꿔도 따라온다). 손으로 좌표를 박으면 조용히 어긋난다. */
+  .homebtn{ position:absolute; z-index:5; width:27px; height:27px; padding:0; cursor:pointer;
+    display:grid; place-items:center; border-radius:var(--r1); color:var(--dim);
+    background:var(--glass-1); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    border:1px solid var(--border); box-shadow:var(--sh2), var(--sh-ring);
+    transition:color .12s, background-color .12s, border-color .12s; }
+  .homebtn:hover{ color:var(--text); background:var(--tint-3); border-color:var(--border2); }
+  .homebtn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
   .fmode{ position:absolute; left:50%; top:var(--vpad); transform:translateX(-50%); display:flex;
     background:var(--glass-1); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
     border:1px solid var(--border); border-radius:var(--r2); overflow:hidden; z-index:5; box-shadow:var(--sh2), var(--sh-ring); }
@@ -383,6 +393,9 @@
   <header><div class="glyph">TI</div><b>TI Planner</b><span class="sp"></span><span class="status" id="status">…</span><button class="lang" id="langbtn" onclick="toggleLang()">EN</button></header>
 
   <div class="controls">
+    <div class="grp" id="modelbox"><div class="lab" data-i18n="modelLab">머리 모델</div>
+      <select id="modelsel" autocomplete="off" onchange="switchModel(this.value)"></select>
+      <div class="hint" id="modelhint" style="margin-top:6px"></div></div>
     <div class="grp"><div class="lab" data-i18n="target">표적</div>
       <select id="target" onchange="onTargetChange()"></select>
       <div id="coordbox" style="display:none;margin-top:9px">
@@ -421,6 +434,10 @@
       <div class="wt"><label data-i18n="wM1" for="w1">M1 세기</label><input type="range" id="w1" min="0" max="1" step="0.05" value="0.5" oninput="onWeight()"><output id="w1o">0.5</output></div>
       <div class="wt"><label data-i18n="wM2" for="w2">M2 초점</label><input type="range" id="w2" min="0" max="1" step="0.05" value="0.5" oninput="onWeight()"><output id="w2o">0.5</output></div>
       <div class="wt"><label data-i18n="wM3" for="w3">M3 누출↓</label><input type="range" id="w3" min="0" max="1" step="0.05" value="0.5" oninput="onWeight()"><output id="w3o">0.5</output></div></div>
+    <div class="grp tight" id="curbox"><div class="lab" data-i18n="curLab">자극 전류</div>
+      <div><div class="hint" style="margin:0 0 5px" id="curunit" data-i18n="curUnit">최대 전류 (mA)</div>
+        <input type="number" id="ichmax" min="0" step="0.05" oninput="curHint()"></div>
+      <div class="hint" id="curhint" style="margin-top:6px"></div></div>
     <div class="grp tight" id="freqbox"><div class="lab" data-i18n="freq">반송파 주파수</div>
       <div class="row2"><div><div class="hint" style="margin:0 0 5px">f₁ (Hz)</div><input type="number" id="f1" value="2000" oninput="showDf()"></div><div><div class="hint" style="margin:0 0 5px">f₂ (Hz)</div><input type="number" id="f2" value="2100" oninput="showDf()"></div></div>
       <div class="hint" id="dfhint" style="margin-top:6px">Δf = 100 Hz</div></div>
@@ -431,15 +448,15 @@
     <div class="runrow"><button class="cta" id="run" onclick="compute()" data-i18n="run">계산</button><button class="reset" onclick="resetAll()" data-i18n="reset">↺ 초기화</button></div>
     <div class="prog" id="prog"><div class="pbar"><div class="pfill" id="pfill"></div></div><div class="pmeta"><span id="pstage" aria-live="polite">—</span><span><span id="pelapsed" class="pel"></span><span id="ppct">0%</span></span></div></div>
     <div class="grp" id="s4lgrp" style="margin-top:11px"><div class="selrow"><div class="lab" style="margin:0" data-i18n="s4lTitle">Sim4Life 정밀 검증</div><span class="count" id="s4lstat">idle</span></div>
-      <div class="hint" style="margin-top:0" data-i18n="s4lHint">계산한 몽타주를 Sim4Life 로 보내 머리 전체를 유한요소로 다시 풉니다 (약 7분). 리드필드는 뇌 복셀만 담아 두피 전류밀도 같은 안전 지표를 못 봅니다 — 그게 여기서만 나옵니다. 전에 같은 분석을 했다면 즉시 꺼내옵니다.</div>
-      <button class="btn" style="margin-top:9px;width:100%" onclick="s4lSendMontage()" data-i18n="s4lSend">▶ Sim4Life 로 보내기</button>
+      <button class="btn" style="margin-top:7px;width:100%" onclick="s4lSendMontage()" data-i18n="s4lSend">▶ Sim4Life 로 보내기</button>
+      <div class="hint" style="margin-top:8px" data-i18n="s4lHint">계산한 몽타주를 Sim4Life 로 보내 머리 전체를 유한요소로 다시 풉니다 (약 7분). 리드필드는 뇌 복셀만 담아 두피 전류밀도 같은 안전 지표를 못 봅니다 — 그게 여기서만 나옵니다. 전에 같은 분석을 했다면 즉시 꺼내옵니다.</div>
       <div class="prog" id="s4lprog" style="display:none;margin-top:9px"><div class="pbar"><div class="pfill" id="s4lfill"></div></div><div class="pmeta"><span id="s4lstage" aria-live="polite">—</span><span id="s4lpct">0%</span></div>
         <button class="reset" id="s4lcancel" style="display:none;width:100%;margin-top:8px;padding:8px" onclick="s4lCancel()" data-i18n="s4lCancel">■ 취소</button></div>
       <div class="hint" id="s4llog" style="margin-top:6px;white-space:pre-wrap;max-height:130px;overflow:auto"></div></div>
   </div>
 
   <div class="stage">
-    <div class="viewer" id="viewer" role="img" aria-label="3D 두부 모형"><div class="vhud" id="vhud"></div><div class="archud" id="archud" style="display:none"></div><div class="cbar" id="cbar"></div><div class="cbar-l" id="cbarHi" style="top:var(--vpad)" data-i18n="strong">강</div><div class="cbar-l" id="cbarLo" style="bottom:var(--vpad)" data-i18n="weak">약</div>
+    <div class="viewer" id="viewer" role="img" aria-label="3D 두부 모형"><div class="vhud" id="vhud"></div><div class="archud" id="archud" style="display:none"></div><div class="cbar" id="cbar"></div><div class="cbar-l" id="cbarHi" style="top:var(--vpad)" data-i18n="strong">강</div><div class="cbar-l" id="cbarLo" style="bottom:var(--vpad)" data-i18n="weak">약</div><button class="homebtn" id="homebtn" onclick="resetView()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.6 12 3.2l9 7.4"/><path d="M5.6 9.4V20.8h12.8V9.4"/></svg></button>
       <div class="fmode" id="fmode" role="tablist" aria-label="시야 모드"><button class="on" id="fmInt" onclick="setFMode('intensity')" data-i18n="fmField">필드</button><button id="fmAf" onclick="setFMode('af')" disabled data-i18n="fmAf">활성화함수</button><button id="fmEf" onclick="setFMode('efield')" disabled data-i18n="fmVec">벡터·파형</button></div>
       <div class="resolp" id="resolp">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><b id="resolLab" data-i18n="resolTitle">활성 임계</b>
@@ -502,26 +519,26 @@
 <script src="/vendor/OrbitControls.js"></script>
 <script src="/vendor/CSS2DRenderer.js"></script>
 <script>
-const T={ko:{dOk:"확인",dCancel:"취소",mEnv:"엔벨로프 형성",mEnvHint:"두 반송파는 각각 너무 빨라 뉴런이 못 따라갑니다. 뉴런이 느끼는 것은 둘의 간섭이 만드는 <b>포락선</b>(금색)이고, 그 진폭이 곧 자극량 Tmax 입니다.",lgC1:"반송파 f₁",lgC2:"반송파 f₂",lgSum:"간섭 합",lgEnv:"엔벨로프 (= 자극량)",envAt:"표적 중심에서",vBest:"최적 몽타주",vSlots:"슬롯",vElec:"전극",vCopy:"표 복사",vCopied:"복사됨",vDelta:"#1 대비",elListOpen:"전극 목록에서 선택 (키보드)",elListLocked:"결과 표시 중에는 잠깁니다 — ↺ 초기화 후 다시 선택하세요.",viewerAria:"3D 두부 모형 · 전극 {n}개 선택됨. 전극 선택은 왼쪽 «전극 목록에서 선택» 을 쓰세요.",target:"표적",mode:"자극 모드",gevd:"분산 자극 (방향성)",dual:"4채널 이중TI",selMode:"(β) 선택성",huangMode:"(β) Huang",tmMode:"시분할",tmSlots:"최대 슬롯 수",tmElec:"전극 예산",tmFloor:"강도 유지율",tmHint:"전극은 슬롯 간 재사용됩니다(예산 < 4×슬롯 가능). 강도 유지율이 높을수록 시분할 이점이 커지는 영역입니다.",pmaxLabel:"Pmax — 초점 ↔ 강도",pmaxHint:"낮을수록 초점(강도↓) · 높을수록 강도(=HD-TES 융합). off 변조파워 상한.",dualfreq:"이중 TI 주파수 (Hz)",kLabel:"사용할 전극 개수 (K)",kHint:"K개 전극을 두 반송파에 자유 분산. 방향(축)은 표적서 자동, 간섭으로 방향 선택성 극대화.",elec:"사용가능 전극",selected:"선택",elecHint:"3D에서 전극 클릭=선택 · 드래그=회전",selAll:"전체 선택",deselAll:"모두 해제",presets:"내 프리셋",savePreset:"＋ 저장",presetHint:"선택 조합을 저장해 재사용",weights:"지표 가중치 (최적안 선택)",wM1:"M1 세기",wM2:"M2 초점",wM3:"M3 누출↓",pctl:"M3 등백분위 p",freq:"반송파 주파수",run:"계산",reset:"↺ 초기화",saveResult:"결과 저장",needElec:"먼저 자극할 전극을 3D에서 선택하세요 (최소 4개).",coordHint:"표적 좌표(mm)·반경. 근사값이니 필요시 조정하세요.",strong:"강",weak:"약",fmField:"필드",fmAf:"활성화함수",fmVec:"벡터·파형",
+const T={ko:{dOk:"확인",dCancel:"취소",mEnv:"엔벨로프 형성",mEnvHint:"두 반송파는 각각 너무 빨라 뉴런이 못 따라갑니다. 뉴런이 느끼는 것은 둘의 간섭이 만드는 <b>포락선</b>(금색)이고, 그 진폭이 곧 자극량 Tmax 입니다.",lgC1:"반송파 f₁",lgC2:"반송파 f₂",lgSum:"간섭 합",lgEnv:"엔벨로프 (= 자극량)",envAt:"표적 중심에서",vBest:"최적 몽타주",vSlots:"슬롯",vElec:"전극",vCopy:"표 복사",vCopied:"복사됨",vDelta:"#1 대비",elListOpen:"전극 목록에서 선택 (키보드)",elListLocked:"결과 표시 중에는 잠깁니다 — ↺ 초기화 후 다시 선택하세요.",viewerAria:"3D 두부 모형 · 전극 {n}개 선택됨. 전극 선택은 왼쪽 «전극 목록에서 선택» 을 쓰세요.",target:"표적",mode:"자극 모드",gevd:"분산 자극 (방향성)",dual:"4채널 이중TI",selMode:"(β) 선택성",huangMode:"(β) Huang",tmMode:"시분할",tmSlots:"최대 슬롯 수",tmElec:"전극 예산",tmFloor:"강도 유지율",tmHint:"전극은 슬롯 간 재사용됩니다(예산 < 4×슬롯 가능). 강도 유지율이 높을수록 시분할 이점이 커지는 영역입니다.",pmaxLabel:"Pmax — 초점 ↔ 강도",pmaxHint:"낮을수록 초점(강도↓) · 높을수록 강도(=HD-TES 융합). off 변조파워 상한.",dualfreq:"이중 TI 주파수 (Hz)",kLabel:"사용할 전극 개수 (K)",kHint:"K개 전극을 두 반송파에 자유 분산. 방향(축)은 표적서 자동, 간섭으로 방향 선택성 극대화.",elec:"사용가능 전극",selected:"선택",elecHint:"3D에서 전극 클릭=선택 · 드래그=회전",selAll:"전체 선택",deselAll:"모두 해제",presets:"내 프리셋",savePreset:"＋ 저장",presetHint:"선택 조합을 저장해 재사용",weights:"지표 가중치 (최적안 선택)",wM1:"M1 세기",wM2:"M2 초점",wM3:"M3 누출↓",pctl:"M3 등백분위 p",freq:"반송파 주파수",curLab:"자극 전류",curUnit:"최대 전류 (mA)",modelLab:"머리 모델",run:"계산",reset:"↺ 초기화",saveResult:"결과 저장",needElec:"먼저 자극할 전극을 3D에서 선택하세요 (최소 4개).",coordHint:"표적 좌표(mm)·반경. 근사값이니 필요시 조정하세요.",strong:"강",weak:"약",fmField:"필드",fmAf:"활성화함수",fmVec:"벡터·파형",
   m1u:"표적 세기 (V/m)",m2u:"초점 정확도 ↑",m3u:"누출 % ↓",wpu:"종합 점수",mTop:"상위 조합",mTopSub:"가중치 기준 상위 5 — 클릭해서 보기",mDetail:"상세 분석",mHist:"누적 분포",mHistSub:"각 세기 이상으로 자극된 부피 비율 (표적 vs 비표적)",mMontage:"자극 설정 (전극·전류)",mMontageSub:"전극 위치와 전류 (빨강=채널1 f₁, 파랑=채널2 f₂, 극성은 +/−) · 자극기에 넣을 설정",mPareto:"트레이드오프 지도",mParetoSub:"세기↔초점↔누출의 최적 균형점들 (하나를 개선하면 다른 게 나빠지는 경계)",emptyState:"표적·전극·모드를 고르고 계산을 누르세요.",
   m1t:"표적 내부 자극 세기의 중앙값 (TI 변조 엔벨로프, V/m). 높을수록 강하게 자극.",m2t:"표적 대 비표적 세기의 비 (RMS²). 높을수록 초점이 좁고 정확.",m3t:"표적보다 강하게 자극된 비표적 부피의 비율(%). 낮을수록 누출이 적음.",wpt:"M1·M2·M3를 가중치로 합친 종합 점수. 슬라이더로 조정.",
   sVol:"표적 부피",sDepth:"표적 깊이",sCenter:"표적 중심",sMed:"세기 중앙값",sRange:"세기 범위",sMax:"세기 최대",sPeak:"엔벨로프 피크",sIn:"표적 내",sOut:"표적 밖",sOff:"비표적 최대",sHfT:"HF peak(표적)",sHfO:"HF peak(off)",vox:"복셀",secs:"초",
  
   s4lTitle:"Sim4Life 정밀 검증",s4lSend:"▶ Sim4Life 로 보내기",s4lCancel:"■ 취소",s4lPanel:"Sim4Life 머리 전체 분석",
   s4lHint:"계산한 몽타주를 Sim4Life 로 보내 머리 전체를 유한요소로 다시 풉니다 (약 7분). 리드필드는 뇌 복셀만 담아 두피 전류밀도 같은 안전 지표를 못 봅니다 — 그게 여기서만 나옵니다. 전에 같은 분석을 했다면 즉시 꺼내옵니다.",
-  dualHint:"A쌍·B쌍은 각각 Δf로 맥놀이, 두 대역은 떨어뜨려 쌍간 간섭 방지",resolTitle:"활성 임계",refTgt:"표적 대비",refMax:"최대 대비",ptTitle:"위치 분석",
+  dualHint:"A쌍·B쌍은 각각 Δf로 맥놀이, 두 대역은 떨어뜨려 쌍간 간섭 방지",resolTitle:"활성 임계",refTgt:"표적 대비",refMax:"최대 대비",ptTitle:"위치 분석",homeView:"처음 시점으로 (회전·확대·이동 되돌리기)",
   efHint:"화살표 길이=세기 · 점 클릭=분석(최강점 스냅) · Ctrl+휠=깊이 · 그냥 휠=줌",
   wsecField:"필드 드라이브 (E) — 두 반송파 → 간섭 → 엔벨로프 · 축별 (★=최적)",
   wsecAf:"활성화함수 드라이브 (∂E/∂s) — 축별 (★=최적)",
  st_준비:"준비",st_정밀화:"정밀화",st_몽타주사전계산:"몽타주 사전계산",st_비율폴리싱:"비율 폴리싱","st_필드·AF사전계산":"필드·AF 사전계산",st_전수탐색:"전수탐색",st_NSGA진화:"NSGA 진화",st_GEVD:"GEVD",st_분산최적화:"분산 최적화",st_이중TI최적화:"이중 TI 최적화",st_선택성최적화:"선택성 최적화",st_필드계산:"필드 계산",st_완료:"완료"},
- en:{dOk:"OK",dCancel:"Cancel",mEnv:"Envelope formation",mEnvHint:"Each carrier alone is far too fast for a neuron to follow. What the neuron feels is the <b>envelope</b> (gold) formed by their interference, and its amplitude is the stimulation Tmax.",lgC1:"carrier f₁",lgC2:"carrier f₂",lgSum:"interference sum",lgEnv:"envelope (= stimulation)",envAt:"at target centre",vBest:"Best montage",vSlots:" slots",vElec:" electrodes",vCopy:"Copy table",vCopied:"Copied",vDelta:"vs #1",elListOpen:"Select from electrode list (keyboard)",elListLocked:"Locked while results are shown — press ↺ Reset to select again.",viewerAria:"3D head model · {n} electrodes selected. Use “Select from electrode list” on the left to change the selection.",target:"Target",mode:"Stimulation mode",gevd:"Distributed (dir.)",dual:"4ch Dual TI",selMode:"(β) Selective",huangMode:"(β) Huang",tmMode:"Time-mux",tmSlots:"Max slots",tmElec:"Electrode budget",tmFloor:"Strength floor",tmHint:"Electrodes are reused across slots (budget can be < 4×slots). Higher strength floor = regime where time-mux gains appear.",pmaxLabel:"Pmax — focal ↔ intense",pmaxHint:"Lower=focal (weaker) · higher=intense (=HD-TES fusion). Off-target modulation power cap.",dualfreq:"Dual TI frequencies (Hz)",kLabel:"Number of electrodes (K)",kHint:"K electrodes freely split across two carriers. Axis auto from target; interference maximizes directional selectivity.",elec:"Available electrodes",selected:"selected",elecHint:"Click electrodes in 3D · drag to rotate",selAll:"Select all",deselAll:"Clear",presets:"My presets",savePreset:"＋ Save",presetHint:"Save electrode sets to reuse",weights:"Metric weights (best pick)",wM1:"M1 strength",wM2:"M2 focality",wM3:"M3 leakage↓",pctl:"M3 isopercentile p",freq:"Carrier frequency",run:"Compute",reset:"↺ Reset",saveResult:"Save result",needElec:"Select electrodes in the 3D view first (at least 4).",coordHint:"Target coords(mm)·radius. Approximate — adjust if needed.",strong:"hi",weak:"lo",fmField:"Field",fmAf:"Activating fn",fmVec:"Vectors & waves",
+ en:{dOk:"OK",dCancel:"Cancel",mEnv:"Envelope formation",mEnvHint:"Each carrier alone is far too fast for a neuron to follow. What the neuron feels is the <b>envelope</b> (gold) formed by their interference, and its amplitude is the stimulation Tmax.",lgC1:"carrier f₁",lgC2:"carrier f₂",lgSum:"interference sum",lgEnv:"envelope (= stimulation)",envAt:"at target centre",vBest:"Best montage",vSlots:" slots",vElec:" electrodes",vCopy:"Copy table",vCopied:"Copied",vDelta:"vs #1",elListOpen:"Select from electrode list (keyboard)",elListLocked:"Locked while results are shown — press ↺ Reset to select again.",viewerAria:"3D head model · {n} electrodes selected. Use “Select from electrode list” on the left to change the selection.",target:"Target",mode:"Stimulation mode",gevd:"Distributed (dir.)",dual:"4ch Dual TI",selMode:"(β) Selective",huangMode:"(β) Huang",tmMode:"Time-mux",tmSlots:"Max slots",tmElec:"Electrode budget",tmFloor:"Strength floor",tmHint:"Electrodes are reused across slots (budget can be < 4×slots). Higher strength floor = regime where time-mux gains appear.",pmaxLabel:"Pmax — focal ↔ intense",pmaxHint:"Lower=focal (weaker) · higher=intense (=HD-TES fusion). Off-target modulation power cap.",dualfreq:"Dual TI frequencies (Hz)",kLabel:"Number of electrodes (K)",kHint:"K electrodes freely split across two carriers. Axis auto from target; interference maximizes directional selectivity.",elec:"Available electrodes",selected:"selected",elecHint:"Click electrodes in 3D · drag to rotate",selAll:"Select all",deselAll:"Clear",presets:"My presets",savePreset:"＋ Save",presetHint:"Save electrode sets to reuse",weights:"Metric weights (best pick)",wM1:"M1 strength",wM2:"M2 focality",wM3:"M3 leakage↓",pctl:"M3 isopercentile p",freq:"Carrier frequency",curLab:"Stimulation current",curUnit:"Max current (mA)",modelLab:"Head model",run:"Compute",reset:"↺ Reset",saveResult:"Save result",needElec:"Select electrodes in the 3D view first (at least 4).",coordHint:"Target coords(mm)·radius. Approximate — adjust if needed.",strong:"hi",weak:"lo",fmField:"Field",fmAf:"Activating fn",fmVec:"Vectors & waves",
   m1u:"target strength (V/m)",m2u:"focality ↑",m3u:"leakage % ↓",wpu:"overall score",mTop:"Top combinations",mTopSub:"Top 5 by weights — click to view",mDetail:"Detailed analysis",mHist:"Cumulative distribution",mHistSub:"Volume fraction above each level (target vs off-target)",mMontage:"Stimulation setup (electrodes·currents)",mMontageSub:"Electrode positions and currents (red=channel 1 f₁, blue=channel 2 f₂, polarity by +/−) · stimulator settings",mPareto:"Trade-off map",mParetoSub:"Best balance points of strength↔focality↔leakage (improving one worsens another)",emptyState:"Pick target·electrodes·mode, then Compute.",
   m1t:"Median TI modulation-envelope strength inside the target (V/m). Higher = stronger stimulation.",m2t:"Ratio of target vs off-target strength (RMS²). Higher = tighter, more accurate focus.",m3t:"Fraction (%) of off-target volume stimulated stronger than the target. Lower = less leakage.",wpt:"Weighted sum of M1·M2·M3. Adjust with sliders.",
   sVol:"Target volume",sDepth:"Target depth",sCenter:"Target center",sMed:"Strength median",sRange:"Strength range",sMax:"Strength max",sPeak:"Envelope peak",sIn:"in target",sOut:"off target",sOff:"Off-target max",sHfT:"HF peak(target)",sHfO:"HF peak(off)",vox:"vox",secs:"s",
  
   s4lTitle:"Sim4Life verification",s4lSend:"▶ Send to Sim4Life",s4lCancel:"■ Cancel",s4lPanel:"Sim4Life whole-head analysis",
   s4lHint:"Send the computed montage to Sim4Life and re-solve the whole head with FEM (~7 min). The leadfield holds brain voxels only, so safety numbers like scalp current density are invisible there — they come from here. Instant if the same analysis was run before.",
-  dualHint:"Pairs A and B each beat at their own Δf; the two bands are kept apart to avoid cross-pair interference",resolTitle:"Activation threshold",refTgt:"vs target",refMax:"vs max",ptTitle:"Point",
+  dualHint:"Pairs A and B each beat at their own Δf; the two bands are kept apart to avoid cross-pair interference",resolTitle:"Activation threshold",refTgt:"vs target",refMax:"vs max",ptTitle:"Point",homeView:"Reset view (undo rotate · zoom · pan)",
   efHint:"arrow length = strength · click a point to analyse (snaps to peak) · Ctrl+wheel = depth · wheel = zoom",
   wsecField:"Field drive (E) — two carriers → interference → envelope · per axis (★ = best)",
   wsecAf:"Activating-function drive (∂E/∂s) — per axis (★ = best)",
@@ -538,6 +555,9 @@ function applyLang(){ document.documentElement.lang=LANG; document.getElementByI
   //  같은 문구를 title(마우스)과 aria-label(키보드·스크린리더) 양쪽에 넣는다 — title 은 포커스로는 안 뜬다
   [['mcM1','m1t'],['mcM2','m2t'],['mcM3','m3t'],['mcM4','wpt']].forEach(([id,k])=>{
     const e=document.getElementById(id); e.title=t(k); e.setAttribute('aria-label',t(k)); });
+  //  ★홈 버튼은 아이콘뿐이라 data-i18n 을 못 쓴다(textContent 를 덮으면 SVG 가 지워진다)
+  const _hb=document.getElementById('homebtn');
+  if(_hb){ _hb.title=t('homeView'); _hb.setAttribute('aria-label',t('homeView')); }
   if(INIT)buildTargets();
   //  ★언어만 바뀌었다 — 결과 문구만 다시 그리면 된다. 예전엔 renderCore 를 불러
   //  점군 색 버퍼 30만 개를 통째로 다시 올렸다.
@@ -546,7 +566,7 @@ function applyLang(){ document.documentElement.lang=LANG; document.getElementByI
   if(S4LRES) renderS4L(S4LRES.res, S4LRES.job);   // ★이 줄이 없으면 S4L 패널만 옛 언어로 남는다
   const _sc=document.getElementById('s4lcancel'); if(_sc) _sc.textContent=t2('■ 취소','■ Cancel'); }
 
-let INIT=null,MODE='classic',SEL=new Set(),RESULT=false,PARETO=[],LAST=null;
+let INIT=null,SCALE=1,MODE='classic',SEL=new Set(),RESULT=false,PARETO=[],LAST=null;
 let scene,camera,renderer,labelRenderer,controls,ptGeo,elMeshes={},elLabels={},centroid=[0,0,0],raycaster,pointer,down=null,tgtCloud,tgtGeo,gizmoScene,gizmoCam;
 let FMODE='intensity',efE1=null,efE2=null,efPts=null,efData=null,rayHits=[],rayIdx=0,pickMarker=null;
 let driveArr=null,drivePeak=1,driveTgtPeak=1,driveTgt=null,resolRef='target',_resolTimer=null;
@@ -585,11 +605,64 @@ function readPal(){
 //  세 군데 있다. 전역을 `ch` 로 두면 그 안에서 전역이 가려져 조용히 다른 걸 부르게 된다.
 const chCol=i=>CH[(i|0)%(CH.length||1)]||{hex:'#ff6b6b',t:'#ff6b6b',int:0xff6b6b};
 
-async function init(){ readPal(); INIT=await (await fetch('/api/init')).json(); buildTargets();
+async function init(){ readPal(); INIT=await (await fetch('/api/init')).json(); buildModelSel(); buildCur(); buildTargets();
   document.getElementById('cx').value=INIT.brain_center[0]; document.getElementById('cy').value=INIT.brain_center[1]; document.getElementById('cz').value=INIT.brain_center[2];
   loadPresets(); init3D(); buildElecList(); applyLang(); onTargetChange(); rngFillAll();
-  document.getElementById('status').textContent=`${INIT.electrodes.length} el · ${INIT.cloud.length} vox`;
+  document.getElementById('status').textContent=`${INIT.model} · ${INIT.electrodes.length} el · ${INIT.cloud.length} vox`;
   s4lRestore(); }
+
+//  ★자극 전류는 **머리의 성질이 아니라 프로토콜 선택**이다. MIDA 는 확립된 값(1.0 mA,
+//  tip.lite 규약)이 있어 그대로 채워지지만, 쥐는 아무도 정한 적이 없어 비어 있고 사용자가
+//  넣어야 계산이 돈다. 전류는 Tmax 에 1차라 M1 만 비례해 바뀌고 M2·M3 와 순위는 그대로다 —
+//  그래서 임의로 채워 넣으면 **순위는 멀쩡한데 보고되는 절대값만 조용히 틀리게** 된다.
+function curIch(){ const v=parseFloat(document.getElementById('ichmax').value); return isFinite(v)&&v>0?v:null; }
+function curHint(){
+  const h=document.getElementById('curhint'), v=curIch();
+  //  ⚠ 칸이 채워져 있다고 그 값이 **확립된 규약**인 것은 아니다. 쥐는 0.1 mA 가 미리
+  //  들어가 있지만 그건 운영자가 정한 작업값이다. 전류는 절대 필드에 1차로 곱해지므로
+  //  (M1 만 정확히 비례, M2·M3·순위는 불변) 틀려도 어디서도 틀려 보이지 않는다.
+  //  그래서 '채워짐'이 아니라 `ich_established` 로 갈라 문구를 정한다.
+  if(v==null){ h.textContent = LANG==='ko' ? '전류를 입력해야 계산할 수 있습니다.'
+                                           : 'enter a current to compute'; h.style.color='var(--err)'; return; }
+  h.style.color='';
+  h.textContent = (INIT&&INIT.ich_established)
+    ? (LANG==='ko' ? `기본값 ${INIT.ich_max} mA (tip.lite 규약)` : `default ${INIT.ich_max} mA (tip.lite convention)`)
+    : (LANG==='ko' ? '이 머리에 확립된 값이 없습니다 — 보고할 때 이 값을 함께 적으세요.'
+                   : 'no established value for this head — report this number with the result');
+}
+function buildCur(){ const el=document.getElementById('ichmax'); if(!el) return;
+  el.value = INIT.ich_max!=null ? INIT.ich_max : '';
+  el.placeholder = INIT.ich_max!=null ? String(INIT.ich_max) : (LANG==='ko'?'예: 0.1':'e.g. 0.1');
+  curHint(); }
+function buildModelSel(){ const el=document.getElementById('modelsel'); if(!el) return;
+  const ms=INIT.models||[];
+  //  모델이 하나뿐이면 고를 것이 없다 — 선택기를 숨겨 화면을 어지럽히지 않는다.
+  el.style.display = ms.length>1 ? '' : 'none';
+  el.innerHTML = ms.map(m=>`<option value="${m.id}">${m.label}</option>`).join('');
+  el.value = INIT.model;
+  const cur=ms.find(m=>m.id===INIT.model)||{}, h=document.getElementById('modelhint');
+  if(h) h.textContent = LANG==='ko'
+    ? `전극 ${INIT.electrodes.length}개 · 기준 ${INIT.ref_elec} · 뇌 복셀 ${INIT.n_brain.toLocaleString()}`
+    : `${INIT.electrodes.length} electrodes · reference ${INIT.ref_elec} · ${INIT.n_brain.toLocaleString()} brain voxels`;
+  void cur; }
+
+//  ★모델을 바꾸면 **페이지를 새로 읽는다.** 전극·표적·점구름·3D 씬·선택 상태·표적 좌표가
+//  전부 이전 머리의 것이라, 부분적으로 갈아끼우면 두 머리가 섞인 화면이 조용히 만들어진다
+//  (애니메이션 루프도 init3D 안에서 스스로 재귀해 두 번 돌게 된다). 서버가 모델을 들고 있으므로
+//  새로고침만 하면 새 머리로 깨끗하게 다시 선다.
+async function switchModel(id){
+  const el=document.getElementById('modelsel'); if(!el||id===INIT.model) return;
+  el.disabled=true;
+  const st=document.getElementById('status'); const prev=st.textContent;
+  st.textContent = LANG==='ko' ? '모델 바꾸는 중…' : 'switching model…';
+  try{
+    const r=await fetch('/api/model',{method:'POST',headers:{'Content-Type':'application/json'},
+                                      body:JSON.stringify({model:id})});
+    const js=await r.json();
+    if(!r.ok||js.error){ alert(js.error||('HTTP '+r.status)); el.value=INIT.model; el.disabled=false; st.textContent=prev; return; }
+    location.reload();
+  }catch(e){ alert(String(e)); el.value=INIT.model; el.disabled=false; st.textContent=prev; }
+}
 // S4L 잡은 브라우저보다 오래 산다(몽타주 약 11분). 새로고침해도 이어서 보이게 한다.
 async function s4lRestore(){
   let js; try{ js=(await (await fetch('/api/jobs?kind=montage')).json()).jobs||[]; }catch(e){ return; }
@@ -598,11 +671,18 @@ async function s4lRestore(){
   const run=js.find(j=>!j.done);
   if(run){ document.getElementById('s4lprog').style.display='block'; S4LJOB=run.id; s4lPoll(); }
 }
+//  'label' 표적은 모델의 조직 라벨에서 만든 마스크다 — UI 는 'mask' 와 똑같이 다뤄야 한다.
+//  (사람은 'mask', 쥐는 'label'. 분기를 한 군데로 모아둬야 새 모델에서 조용히 빠지지 않는다.)
+function isMask(t2){ return !!t2 && (t2.kind==='mask' || t2.kind==='label'); }
 function buildTargets(){ const ts=document.getElementById('target'),cur=ts.value; ts.innerHTML='';
-  INIT.targets.forEach(t2=>{ const o=document.createElement('option'); o.value=t2.id; o.textContent=t2[LANG]; ts.appendChild(o); }); if(cur)ts.value=cur; }
+  INIT.targets.forEach(t2=>{ const o=document.createElement('option'); o.value=t2.id;
+    //  좌우 분할이 완전하지 않은 모델(쥐)은 그 비율을 옆에 적는다 — 숨기지 않는다.
+    o.textContent=t2[LANG]+(t2.share!==undefined&&Math.abs(t2.share-50)>2?` · ${t2.share}%`:'');
+    ts.appendChild(o); });
+  if(cur && INIT.targets.some(t2=>t2.id===cur)) ts.value=cur; }
 function targetObj(){ return INIT.targets.find(t2=>t2.id===document.getElementById('target').value); }
 function onTargetChange(){ const t2=targetObj(); const box=document.getElementById('coordbox');
-  if(t2.kind==='mask'){ box.style.display='none'; }
+  if(isMask(t2)){ box.style.display='none'; }
   else{ box.style.display='block'; const c=t2.center||INIT.brain_center; cx.value=c[0]; cy.value=c[1]; cz.value=c[2]; if(t2.radius)cr.value=t2.radius; }
   updateMarker(); }
 //  ←→ 로 탭 이동. role="tab" 을 붙였으면 화살표 이동이 따라와야 한다(WAI-ARIA 탭 패턴).
@@ -628,8 +708,8 @@ function showDf(){ const d=Math.abs((+f2.value)-(+f1.value)), h=document.getElem
         :(warn?` <b style="color:${PAL.warnFg}">— ${LANG==='ko'?'권장 범위 밖':'outside usual range'}</b>`
               :` <span style="opacity:.7">(${LANG==='ko'?'엔벨로프 주파수':'envelope freq'})</span>`));
   h.style.color=bad?PAL.anode:(warn?PAL.warnFg:'var(--dim)'); }
-function curTargetSpec(){ const t2=targetObj(); if(t2.kind==='mask')return {id:t2.id}; return {kind:'sphere',center:[+cx.value,+cy.value,+cz.value],radius:+cr.value}; }
-function curTargetCenter(){ const t2=targetObj(); if(t2.kind==='mask')return t2.center; return [+cx.value,+cy.value,+cz.value]; }
+function curTargetSpec(){ const t2=targetObj(); if(isMask(t2))return {id:t2.id}; return {kind:'sphere',center:[+cx.value,+cy.value,+cz.value],radius:+cr.value}; }
+function curTargetCenter(){ const t2=targetObj(); if(isMask(t2))return t2.center; return [+cx.value,+cy.value,+cz.value]; }
 
 function init3D(){ const box=document.getElementById('viewer'),w=box.clientWidth,h=box.clientHeight;
   //  ★three.js 가 없으면 여기부터 전부 죽는다 — 빈 검은 칸 대신 이유를 적는다.
@@ -641,28 +721,118 @@ function init3D(){ const box=document.getElementById('viewer'),w=box.clientWidth
       +'<span style="color:var(--faint)">계산·지표·프로토콜은 3D 없이도 그대로 동작합니다.</span></div></div>';
     return;
   }
-  scene=new THREE.Scene(); camera=new THREE.PerspectiveCamera(45,w/h,1,4000);
+  //  ★모든 절대 치수는 머리 크기에 비례해야 한다. 사람 머리는 약 180 mm, 쥐 뇌는 약 21 mm 라
+  //  고정 3.6 mm 전극 구를 쓰면 쥐에서는 뇌가 전극에 완전히 파묻힌다. 점구름 경계상자에서
+  //  SCALE 을 뽑아 모든 치수에 곱한다(사람에서 1.0 이 되도록 180 으로 정규화 — 기존 화면 불변).
+  //  ⚠ 카메라 near/far 도 여기에 걸리므로 **씬을 만들기 전에** 정해야 한다.
+  (function(){ const q=INIT.cloud,lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];
+    q.forEach(p=>{for(let k=0;k<3;k++){if(p[k]<lo[k])lo[k]=p[k];if(p[k]>hi[k])hi[k]=p[k];}});
+    SCALE=Math.max(hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2])/180; })();
+  scene=new THREE.Scene(); camera=new THREE.PerspectiveCamera(45,w/h,Math.max(0.02,1*SCALE),4000*SCALE);
   renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,preserveDrawingBuffer:true}); renderer.setSize(w,h); renderer.setPixelRatio(Math.min(devicePixelRatio,2)); box.appendChild(renderer.domElement);
   labelRenderer=new THREE.CSS2DRenderer(); labelRenderer.setSize(w,h); labelRenderer.domElement.style.cssText='position:absolute;inset:0;pointer-events:none'; box.appendChild(labelRenderer.domElement);
-  const c=INIT.cloud,n=c.length; centroid=[0,0,0]; c.forEach(p=>{centroid[0]+=p[0];centroid[1]+=p[1];centroid[2]+=p[2];}); centroid=centroid.map(v=>v/n);
+  const c=INIT.cloud,n=c.length;
+  //  ★장면 원점 = **뇌 경계상자의 한가운데**. 예전엔 점구름의 평균(질량중심)이었는데,
+  //  뇌는 아래쪽(소뇌·측두엽)이 무거워 질량중심이 눈에 보이는 한가운데보다 치우친다.
+  //  회전 피벗이 여기라 화면에서 '중심이 어긋난 채 도는' 느낌이 났다. 쥐에서는 전극이
+  //  뇌의 앞쪽 절반만 덮어 차이가 더 크다.
+  (function(){ const lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];
+    c.forEach(p=>{for(let k=0;k<3;k++){if(p[k]<lo[k])lo[k]=p[k];if(p[k]>hi[k])hi[k]=p[k];}});
+    centroid=[0,1,2].map(k=>(lo[k]+hi[k])/2); })();
   ptGeo=new THREE.BufferGeometry(); const pos=new Float32Array(n*3),col=new Float32Array(n*3);
   for(let i=0;i<n;i++){ pos[i*3]=c[i][0]-centroid[0];pos[i*3+1]=c[i][1]-centroid[1];pos[i*3+2]=c[i][2]-centroid[2]; const ci=PAL.cloudIdle; col[i*3]=ci[0];col[i*3+1]=ci[1];col[i*3+2]=ci[2]; }
   ptGeo.setAttribute('position',new THREE.BufferAttribute(pos,3)); ptGeo.setAttribute('color',new THREE.BufferAttribute(col,3));
-  scene.add(new THREE.Points(ptGeo,new THREE.PointsMaterial({size:1.5,vertexColors:true,sizeAttenuation:true,transparent:true,opacity:.4})));
-  INIT.electrodes.forEach(e=>{ const m=new THREE.Mesh(new THREE.SphereGeometry(3.6,14,14),new THREE.MeshBasicMaterial({color:PAL.i.elIdle}));
+  scene.add(new THREE.Points(ptGeo,new THREE.PointsMaterial({size:1.5*SCALE,vertexColors:true,sizeAttenuation:true,transparent:true,opacity:.4})));
+  INIT.electrodes.forEach(e=>{ const m=new THREE.Mesh(new THREE.SphereGeometry(3.6*SCALE,14,14),new THREE.MeshBasicMaterial({color:PAL.i.elIdle}));
     m.position.set(e.xyz[0]-centroid[0],e.xyz[1]-centroid[1],e.xyz[2]-centroid[2]); m.userData=e.name; scene.add(m); elMeshes[e.name]=m;
     const d=document.createElement('div'); d.className='elabel'; d.textContent=e.name; const lo=new THREE.CSS2DObject(d); m.add(lo); elLabels[e.name]=lo; });
   // 표적 = 초록 점 구름 (반투명·큰점 → 세기(inferno) 위에 겹쳐도 세기가 비쳐 보이고, 초록은 inferno에 없어 구분됨)
   tgtGeo=new THREE.BufferGeometry(); tgtGeo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(3),3));
-  tgtCloud=new THREE.Points(tgtGeo,new THREE.PointsMaterial({color:PAL.i.tgtCloud,size:3.0,sizeAttenuation:true,transparent:true,opacity:0.2,depthWrite:false})); scene.add(tgtCloud);
-  // 뇌 앞쪽 화살표 (작게·반대방향·라벨없음) — 전두극(Fp/AF)−후두(O/PO) 전극위치로 전방 계산
-  (function(){ const bn={}; INIT.electrodes.forEach(e=>bn[e.name]=e.xyz);
-    const avg=ns=>{ let v=[0,0,0],k=0; ns.forEach(n=>{ if(bn[n]){v[0]+=bn[n][0];v[1]+=bn[n][1];v[2]+=bn[n][2];k++;} }); return k?v.map(x=>x/k):null; };
-    const fr=avg(['Fp1','Fp2','Fpz','AF7','AF8','AF3','AF4']), bk=avg(['O1','O2','Oz','POz','PO7','PO8']); if(!fr||!bk)return;
-    const ant=new THREE.Vector3(fr[0]-bk[0],fr[1]-bk[1],fr[2]-bk[2]).normalize();
-    const org=new THREE.Vector3(fr[0]-centroid[0],fr[1]-centroid[1],fr[2]-centroid[2]).addScaledVector(ant,60);
-    scene.add(new THREE.ArrowHelper(ant.clone().negate(),org,26,PAL.i.good,9,6)); })();
-  camera.position.set(0,30,360); controls=new THREE.OrbitControls(camera,renderer.domElement); controls.enableDamping=true;
+  tgtCloud=new THREE.Points(tgtGeo,new THREE.PointsMaterial({color:PAL.i.tgtCloud,size:3.0*SCALE,sizeAttenuation:true,transparent:true,opacity:0.2,depthWrite:false})); scene.add(tgtCloud);
+  //  ★해부 좌표계. 궤도 회전축·처음 시점·앞쪽 화살표가 **전부 여기서** 나오므로, 여기가
+  //  기울면 셋이 같이 기운다. 사람 MIDA 는 우연히 모델 +y 가 머리 위쪽이라 기본값 (0,1,0)
+  //  으로도 자연스러웠다. 쥐는 머리가 55° 기울어 있어 그렇지 않다.
+  //
+  //  ⚠ 예전 방식(전극 이름만으로 세 축을 만들고 직교화 없이 외적)은 쥐에서 실제로 어긋났다.
+  //  모델의 정중면(정중 구조 9개로 맞춘 것, 평면에서 흩어짐 0.506 mm)을 잣대로 재면:
+  //      앞-뒤 축이 좌우축과 이루는 각   90° 여야 하는데 **78.5°** (11.5° 어긋남)
+  //      전극에서 세운 좌우축 vs 정중면  **17.9° 어긋남**
+  //      등쪽 축이 정중면과 이루는 각    90° 여야 하는데 **107.2°**
+  //  원인 둘: ①쥐는 기준전극이 PO8 이라 전극 풀에서 빠지는데, 그러면 뒤쪽 무리에 PO7 만
+  //  남아 평균이 왼쪽으로 끌린다. ②직교화 단계가 없어 그 오차가 등쪽 축까지 번진다.
+  //  그래서 (a) 좌우 짝이 **둘 다 있는 전극만** 평균에 넣고, (b) 좌우축은 모델이 아는 값을
+  //  먼저 쓰고, (c) 앞-뒤 축에서 좌우 성분을 걷어내 **정확히 직교**시킨다.
+  //  사람은 세 손질 모두 결과가 같다(짝이 다 있고, 정중면이 전극 축과 1.9°, 스냅 뒤 동일).
+  const FRAME=(function(){
+    const bn={}; INIT.electrodes.forEach(e=>bn[e.name]=e.xyz);
+    //  좌=홀수·우=짝수 규약에서 짝 이름. 정중선 이름(…z)은 짝이 필요 없다.
+    const mate=n=>{ const m=n.match(/^([A-Za-z]+)(\d+)$/); if(!m) return null;
+      const k=+m[2]; return m[1]+(k%2 ? k+1 : k-1); };
+    const avg=ns=>{ let v=[0,0,0],k=0;
+      ns.forEach(n=>{ if(!bn[n]) return; const p=mate(n); if(p&&!bn[p]) return;   // 짝 없는 것은 버린다
+        v[0]+=bn[n][0]; v[1]+=bn[n][1]; v[2]+=bn[n][2]; k++; });
+      return k?new THREE.Vector3(v[0]/k,v[1]/k,v[2]/k):null; };
+    const fr=avg(['Fp1','Fp2','Fpz','FP1','FP2','AF7','AF8','AF3','AF4']),
+          bk=avg(['O1','O2','Oz','POz','PO7','PO8','PO3','PO4']),
+          lt=avg(['T7','TP7','FT7','C5','CP5','P5','F5','FC5']),
+          rt=avg(['T8','TP8','FT8','C6','CP6','P6','F6','FC6']);
+    if(!fr||!bk) return null;
+    let left = INIT.left_dir ? new THREE.Vector3().fromArray(INIT.left_dir).normalize()
+                             : (lt&&rt ? lt.clone().sub(rt).normalize() : null);
+    if(!left) return null;
+    const ant=fr.clone().sub(bk); ant.addScaledVector(left,-ant.dot(left)).normalize();
+    let up=new THREE.Vector3().crossVectors(ant,left).normalize();
+    //  전극 무리는 두피 위에 있으므로 뇌 중앙에서 그쪽이 등쪽이다. 부호만 정하는 검사다 —
+    //  등쪽이 뒤집혀 나오면 좌우축 부호가 반대라는 뜻이므로 **둘을 함께** 뒤집어 오른손
+    //  좌표계를 지킨다(예전엔 up 만 뒤집어 왼손 좌표계가 될 수 있었다).
+    let mid=new THREE.Vector3(); let k=0;
+    INIT.electrodes.forEach(e=>{ mid.add(new THREE.Vector3(e.xyz[0],e.xyz[1],e.xyz[2])); k++; });
+    mid.multiplyScalar(1/Math.max(1,k)).sub(new THREE.Vector3(centroid[0],centroid[1],centroid[2]));
+    if(up.dot(mid)<0){ up.negate(); left.negate(); }
+    //  ⚠ 이미 세계축인 축은 **정확히** 그 세계축으로 스냅한다(8° 이내). 사람은 이렇게 해야
+    //  기존 화면이 1도도 안 움직인다 — 잘 되던 것을 건드리지 않는다.
+    const snap=v=>{ for(const [i,ax] of [[0,'x'],[1,'y'],[2,'z']]){
+        const c=[v.x,v.y,v.z][i]; if(Math.abs(c)>0.99){ const w=new THREE.Vector3(0,0,0); w[ax]=Math.sign(c); return w; } }
+      return v; };
+    return {ant:snap(ant), left:snap(left), up:snap(up), front:fr};
+  })();
+  // 뇌 앞쪽 화살표 (작게·반대방향·라벨없음)
+  //  ⚠ 출발점은 **FRAME 이 쓴 것과 같은** 전두극 평균이어야 한다. 예전엔 여기서 짝 검사가
+  //  없는 평균을 새로 구해, 쥐에서 화살표만 축과 어긋난 자리에 떴다.
+  if(FRAME&&FRAME.front){ const fr=FRAME.front.toArray();
+    { const org=new THREE.Vector3(fr[0]-centroid[0],fr[1]-centroid[1],fr[2]-centroid[2]).addScaledVector(FRAME.ant,60*SCALE);
+      scene.add(new THREE.ArrowHelper(FRAME.ant.clone().negate(),org,26*SCALE,PAL.i.good,9*SCALE,6*SCALE)); } }
+  //  ★처음 시점: **뒤에서 약간 위**, 화면 위쪽은 등쪽. 세계축이 아니라 해부축으로 놓아야
+  //  어느 머리에서도 같은 뜻이 된다(사람은 등쪽 (0,1,0)·뒤쪽 (0,0,1) 로 스냅되고 PIVOT 도
+  //  원점이라 예전 값 (0,30,360) 과 정확히 같다).
+  //
+  //  ⚠⚠ **`camera.up` 은 화면 위쪽인 동시에 궤도의 회전축이다. 둘을 따로 고를 수 없다.**
+  //  2026-08-20 에 "아래에서 올려다보고 화면 위를 z(뒤쪽)로" 라는 요청에 맞춰 `camera.up`
+  //  을 뒤쪽 축으로 돌렸는데, 그러자 좌우 드래그가 앞-뒤 축을 도는 **구르기**가 되어 조향이
+  //  두 머리 모두에서 나빠졌다(2026-08-21 에 되돌림). 좌우 드래그가 자연스럽게 "머리를
+  //  돌리는" 것이 되려면 회전축이 **등쪽 축**이어야 한다.
+  //  그리고 등쪽 축을 회전축으로 두면서 **정확히 아래에서** 올려다보는 것은 불가능하다 —
+  //  그 자세가 궤도의 극(polar singularity)이라 화면 위쪽이 정의되지 않는다.
+  //  즉 (아래에서 보기 + z 화면 위)와 (자연스러운 조향)은 **서로 배타적**이다. 조향을 택했다.
+  const CAMUP = FRAME ? FRAME.up.clone() : new THREE.Vector3(0,1,0);
+  //  ★회전 피벗 = 화면에 그려진 것의 한가운데. 원점(뇌 경계상자 중심)과 다를 수 있다.
+  //  ⚠ 방향 표본이 회전축을 따라 만들어지므로 **CAMUP 을 정한 뒤에** 불러야 한다.
+  const PIVOT=orbitPivot(CAMUP);
+  camera.up.copy(CAMUP);
+  //  ★카메라는 **앞쪽에서 약간 위**. 머리가 관찰자를 마주 본다 — gizmo 의 A 화살표가
+  //  화면 밖(관찰자 쪽)을 향한다. 2026-08-21 이전에는 뒤에서 봐서 A 가 화면 안쪽이었다.
+  //  ⚠ 앞에서 보면 좌우가 뒤집혀 보인다(마주 본 사람의 왼쪽이 내 오른쪽) — gizmo 의 L
+  //  화살표가 그것을 그대로 보여주므로 화면의 왼쪽을 피험자의 왼쪽으로 읽지 말 것.
+  if(FRAME) camera.position.copy(FRAME.ant).multiplyScalar(360*SCALE)
+                 .addScaledVector(FRAME.up,30*SCALE).add(PIVOT);
+  else camera.position.set(PIVOT.x, PIVOT.y+30*SCALE, PIVOT.z-360*SCALE);
+  controls=new THREE.OrbitControls(camera,renderer.domElement); controls.enableDamping=true;
+  //  ★회전 피벗을 명시적으로 박는다. **패닝(우클릭·두손가락 드래그)은 target 을 움직인다** —
+  //  한 번 밀고 나면 그 뒤 회전이 엉뚱한 점을 중심으로 돌아 '이동이 어렵다'가 된다.
+  //  되돌릴 길을 둘 둔다: 뷰어를 더블클릭하면 피벗만 제자리로, 홈 버튼(gizmo 위)은
+  //  회전·확대까지 통째로 처음 시점으로 돌린다(saveState 가 그 시점을 여기서 잡아 둔다).
+  controls.target.copy(PIVOT); controls.screenSpacePanning=true; controls.saveState();
+  renderer.domElement.addEventListener('dblclick',()=>{ controls.target.copy(PIVOT); controls.update(); });
   raycaster=new THREE.Raycaster(); pointer=new THREE.Vector2();
   //  ★hover 레이캐스트는 스로틀한다 — 매 프레임 쏘면 3D 가 느려진다(60 ms ≈ 16 fps 로 충분)
   let hovRT=0, hovLast=null;
@@ -686,7 +856,8 @@ function init3D(){ const box=document.getElementById('viewer'),w=box.clientWidth
   renderer.domElement.addEventListener('wheel',e=>{ if(FMODE==='efield'&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); e.stopPropagation(); if(rayHits.length)stepDepth(e.deltaY>0?1:-1); } },{passive:false});
   addEventListener('keydown',e=>{ if((e.key==='Control'||e.key==='Meta')&&FMODE==='efield'&&controls)controls.enableZoom=false; });
   const _rz=()=>{ if(controls)controls.enableZoom=true; }; addEventListener('keyup',e=>{ if(e.key==='Control'||e.key==='Meta')_rz(); }); addEventListener('blur',_rz);
-  initGizmo();
+  initGizmo(FRAME);
+  const homeBtn=document.getElementById('homebtn'), homeAt=[null,null];
   REDUCED=matchMedia('(prefers-reduced-motion: reduce)').matches;
   refreshSel(); (function loop(ts){ requestAnimationFrame(loop); controls.update();
     updateArcParticles((ts||0)/1000);
@@ -697,6 +868,12 @@ function init3D(){ const box=document.getElementById('viewer'),w=box.clientWidth
     //  --vpad 나 컬러바 폭을 바꿀 때 조용히 겹친다.
     const sz=Math.round(Math.min(112,box.clientWidth*0.2));
     const gz=gizmoInset(), gx=Math.max(10, box.clientWidth-sz-gz);
+    //  홈 버튼은 gizmo 바로 위 가운데. **같은 gx·sz 에서 파생**시켜 컬러바가 나타나
+    //  gizmo 가 밀려도 함께 밀린다. 값이 바뀔 때만 쓴다 — 매 프레임 style 을 건드리면
+    //  레이아웃이 계속 다시 계산된다.
+    if(homeBtn){ const bl=Math.round(gx+sz/2-13.5), bb=10+sz+6;
+      if(bl!==homeAt[0]){ homeBtn.style.left=bl+'px'; homeAt[0]=bl; }
+      if(bb!==homeAt[1]){ homeBtn.style.bottom=bb+'px'; homeAt[1]=bb; } }
     const d=camera.position.clone().sub(controls.target).normalize();
     gizmoCam.position.copy(d.multiplyScalar(3.8)); gizmoCam.up.copy(camera.up); gizmoCam.lookAt(0,0,0);
     renderer.autoClear=false; renderer.setViewport(gx,10,sz,sz); renderer.setScissor(gx,10,sz,sz); renderer.setScissorTest(true);
@@ -711,13 +888,121 @@ function gizmoInset(){
   const labW=lab?Math.ceil(lab.getBoundingClientRect().width)||16:16;
   return px('--vpad') + px('--cbar-w') + px('--s1') + labW + 8;   // 8px 여유
 }
-function initGizmo(){ gizmoScene=new THREE.Scene(); gizmoCam=new THREE.PerspectiveCamera(50,1,0.1,100);
+//  ══ 회전 피벗 ═══════════════════════════════════════════════════════════════════════
+//  궤도 회전의 피벗은 **화면에 그려진 것의 한가운데**여야 손이 가는 대로 돈다. 지금까지는
+//  뇌 점구름의 모델축 정렬 경계상자 중심(=장면 원점)을 그대로 썼다. 사람 MIDA 는 머리가
+//  모델축과 나란하고 전극이 머리를 빙 둘러싸므로 그 값이 곧 한가운데였다. 쥐는 둘 다
+//  아니다 — 머리가 55° 기울어 있고 전극 37개가 **등쪽에만 모자처럼** 얹혀 있어서, 뇌만
+//  보고 잡은 중심은 그려진 것의 한가운데보다 배쪽으로 치우친다. 돌리면 모형이 한쪽으로
+//  쏠려 나간다.
+//
+//  그래서 그려지는 것 전부(뇌 점구름 + 전극)를 놓고, 궤도가 닿는 모든 시야 방향에서
+//  '화면 경계상자의 한가운데'와 피벗 사이 거리를 재어 그 **최댓값을 최소화**하는 점을
+//  찾는다. 방향별 중간값 m(r) 은 점에만 의존하므로 한 번만 구해 두면, 그 뒤는 미지수
+//  3개짜리 볼록 문제라 순식간이다.
+//
+//  실측(뷰포트 855×393, 회전 중 최악 쏠림 · 괄호는 평균):
+//      사람  16.5 px (7.5) → 16.8 px (7.7)   개선 없음 → 관문이 기존 피벗을 그대로 둔다
+//      쥐    22.8 px (11.5) → 18.6 px (8.6)  −18% · 사람과 같은 수준이 된다
+//  ⚠ **눈에 안 보이는 개선으로 화면을 움직이지 않는다** — 10% 미만이면 기존 값을 유지한다.
+//    사람 화면이 1 px 도 안 움직이는 것은 이 관문 덕분이지 우연이 아니다. 모델 이름으로
+//    갈라 놓지 않았으므로 머리를 새로 붙여도 알아서 맞는 쪽이 선택된다.
+//
+//  버린 후보들(전부 실측으로 기각, 되살리지 말 것):
+//      · 최소 외접구 중심 — 쥐 +52%, 사람 +144%. 튀어나온 끝점 하나가 지배한다
+//      · 해부축(앞·등·좌) 기준 경계상자 중심 — 쥐 +49%
+//      · 방향별 중간값 최소제곱(닫힌 해) — 쥐 +227%, 방향 표본에 따라 결과가 요동친다
+function orbitPivot(up){
+  //  그려지는 점 = 뇌 점구름(솎아냄) + 전극. m(r) 은 (min+max)/2 라 솎기에 둔감하다:
+  //  전수 10만점과 4천점의 답이 0.4 mm 안쪽으로 같다(실측).
+  const pos=ptGeo.getAttribute('position'), n=pos.count, st=Math.max(1,Math.floor(n/4000));
+  const buf=[];
+  for(let i=0;i<n;i+=st) buf.push(pos.getX(i),pos.getY(i),pos.getZ(i));
+  Object.values(elMeshes).forEach(m=>buf.push(m.position.x,m.position.y,m.position.z));
+  const X=new Float64Array(buf), N=X.length/3;
+  if(N<2) return new THREE.Vector3();
+  //  시야 방향. 궤도는 up 축을 중심으로 도므로 화면 가로축 r 은 **항상 up 에 수직**이다 —
+  //  방향을 구 전체에서 고르면 실제로 도달할 수 없는 자세까지 포함해 답이 나빠진다.
+  const aux=Math.abs(up.x)>0.9?new THREE.Vector3(0,1,0):new THREE.Vector3(1,0,0);
+  const e1=new THREE.Vector3().crossVectors(up,aux).normalize();
+  const e2=new THREE.Vector3().crossVectors(up,e1);
+  const R=[],U=[];
+  for(let ei=0;ei<7;ei++){ const el=(-70+ei*140/6)*Math.PI/180, ce=Math.cos(el), se=Math.sin(el);
+    for(let ai=0;ai<48;ai++){ const az=ai*2*Math.PI/48;
+      const d=e1.clone().multiplyScalar(ce*Math.cos(az)).addScaledVector(e2,ce*Math.sin(az)).addScaledVector(up,se);
+      const r=new THREE.Vector3().crossVectors(d,up); if(r.lengthSq()<1e-12) continue;
+      r.normalize(); R.push(r); U.push(new THREE.Vector3().crossVectors(r,d)); } }
+  const K=R.length;
+  const rx=new Float64Array(K),ry=new Float64Array(K),rz=new Float64Array(K),
+        ux=new Float64Array(K),uy=new Float64Array(K),uz=new Float64Array(K),
+        mr=new Float64Array(K),mu=new Float64Array(K);
+  for(let k=0;k<K;k++){
+    const Rk=R[k],Uk=U[k]; rx[k]=Rk.x; ry[k]=Rk.y; rz[k]=Rk.z; ux[k]=Uk.x; uy[k]=Uk.y; uz[k]=Uk.z;
+    let r0=Infinity,r1=-Infinity,u0=Infinity,u1=-Infinity;
+    for(let i=0;i<N;i++){ const x=X[i*3],y=X[i*3+1],z=X[i*3+2];
+      const tr=x*Rk.x+y*Rk.y+z*Rk.z; if(tr<r0)r0=tr; if(tr>r1)r1=tr;
+      const tu=x*Uk.x+y*Uk.y+z*Uk.z; if(tu<u0)u0=tu; if(tu>u1)u1=tu; }
+    mr[k]=(r0+r1)/2; mu[k]=(u0+u1)/2; }
+  //  피벗 p 에서 본 최악 쏠림. Math.hypot 은 이 안쪽 고리에서 느리다 — sqrt 로 쓴다.
+  const worst=(px,py,pz)=>{ let w=0;
+    for(let k=0;k<K;k++){ const a=mr[k]-(px*rx[k]+py*ry[k]+pz*rz[k]),
+                                b=mu[k]-(px*ux[k]+py*uy[k]+pz*uz[k]), v=Math.sqrt(a*a+b*b);
+      if(v>w)w=v; } return w; };
+  //  볼록하지만 **매끄럽지 않은**(최댓값) 함수다. 꺾인 최소점에서 멈추는 심플렉스·기울기법
+  //  대신 26이웃 패턴탐색으로 내려간다 — 이 규모에선 값이 싸고, 원점에서 출발하므로
+  //  개선이 없으면 원점을 그대로 들고 나온다.
+  let lo0=1e30,lo1=1e30,lo2=1e30,hi0=-1e30,hi1=-1e30,hi2=-1e30;
+  for(let i=0;i<N;i++){ const x=X[i*3],y=X[i*3+1],z=X[i*3+2];
+    if(x<lo0)lo0=x; if(x>hi0)hi0=x; if(y<lo1)lo1=y; if(y>hi1)hi1=y; if(z<lo2)lo2=z; if(z>hi2)hi2=z; }
+  let step=Math.max(hi0-lo0,hi1-lo1,hi2-lo2)*0.05;
+  let px=0,py=0,pz=0, fp=worst(0,0,0); const f0=fp;
+  for(let s=0;s<30;s++){ let moved=true;
+    while(moved){ moved=false;
+      for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++)for(let k=-1;k<=1;k++){
+        if(!i&&!j&&!k) continue;
+        const qx=px+step*i, qy=py+step*j, qz=pz+step*k, fq=worst(qx,qy,qz);
+        if(fq<fp-1e-12){ px=qx; py=qy; pz=qz; fp=fq; moved=true; } } }
+    step*=0.5; }
+  if(!(f0>0) || (f0-fp)/f0<0.10) return new THREE.Vector3();     // ⚠ 위의 관문
+  return new THREE.Vector3(px,py,pz);
+}
+//  홈 버튼 — saveState() 로 잡아 둔 처음 시점(위치·피벗·확대)으로 통째로 돌아간다.
+//  ⚠ `controls.reset()` 만으로는 부족하다. OrbitControls 의 reset 은 저장값을 복사한 뒤 곧바로
+//  `update()` 를 부르는데, **감쇠에 남아 있는 관성(`sphericalDelta`·`panOffset`)을 지우지
+//  않는다**. 감쇠가 켜져 있으면 그 값은 0 이 되지 않고 매 프레임 조금씩 계속 적용되므로,
+//  드래그를 놓자마자 홈을 누르면 복귀한 시점이 다시 밀려난다(실측 1.19 mm 어긋남).
+//  감쇠를 잠깐 끄고 `update()` 를 한 번 돌리면 그 경로가 남은 관성을 **0 으로 만든다**
+//  (vendor/OrbitControls.js 의 `else { sphericalDelta.set(0,0,0); panOffset.set(0,0,0); }`).
+//  그 update 가 카메라를 잠시 움직이지만 바로 뒤 reset 이 저장값으로 되돌리므로 보이지 않는다.
+function resetView(){
+  if(!controls) return;
+  const damp=controls.enableDamping;
+  controls.enableDamping=false; controls.update();   // 남은 관성을 소진해 0 으로 만든다
+  controls.reset();
+  controls.enableDamping=damp;
+}
+//  ★gizmo 는 **해부축**(앞·위·좌)을 보인다 — 모델축 X/Y/Z 가 아니다.
+//  쥐 팬텀은 모델 좌표계가 동물에 대해 55° 기울어 있다. 등쪽 축을 화면 위로 두는 한
+//  (= 좌우 드래그가 머리를 돌리는 자연스러운 조향) 세 모델축 중 **어느 것도 화면에서
+//  수평이나 수직이 될 수 없다** — 등쪽 축과 X·Y·Z 가 각각 57°·65°·43° 라 평행하지도
+//  수직이지도 않기 때문이다. 실측(사람 → 쥐, 화면상 각도):
+//      X  0° → −48.4°     Y  90° → +24.1°     Z 관찰자쪽 0.997 → 0.591
+//  그래서 모델축 gizmo 는 쥐에서 **항상** 비뚤어 보이고, 그건 뷰어 결함이 아니라 팬텀의
+//  성질이다. 모델축 gizmo 를 MIDA 처럼 세우려면 `camera.up` 을 world +y 로 놔야 하는데
+//  그건 쥐의 좌우축에서 27.7° 라 조향이 곤두박질친다 — 둘은 동시에 가질 수 없다.
+//  해부축으로 그리면 기울기와 무관하게 두 머리가 **같은 뜻으로** 읽힌다.
+//  A/S/L = anterior·superior·left. 신경영상에서 쓰는 표준 약자이지 새로 만든 말이 아니다.
+//  ⚠ FRAME 이 없으면(전극 이름으로 축을 못 세우는 머리) 예전처럼 모델축 X/Y/Z 로 떨어진다.
+function initGizmo(FRAME){ gizmoScene=new THREE.Scene(); gizmoCam=new THREE.PerspectiveCamera(50,1,0.1,100);
   const ax=(v,c,t)=>{ gizmoScene.add(new THREE.ArrowHelper(v,new THREE.Vector3(0,0,0),1,c,0.32,0.2));
     const cv=document.createElement('canvas'); cv.width=cv.height=64; const g=cv.getContext('2d');
     g.font='bold 46px ui-monospace'; g.fillStyle='#'+c.toString(16).padStart(6,'0'); g.textAlign='center'; g.textBaseline='middle'; g.fillText(t,32,36);
     const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),depthTest:false,transparent:true}));
     sp.position.copy(v).multiplyScalar(1.34); sp.scale.set(0.5,0.5,1); gizmoScene.add(sp); };
-  ax(new THREE.Vector3(1,0,0),PAL.i.anode,'X'); ax(new THREE.Vector3(0,1,0),PAL.i.good,'Y'); ax(new THREE.Vector3(0,0,1),PAL.i.cathode,'Z'); }
+  if(FRAME){ ax(FRAME.ant.clone().normalize(), PAL.i.anode,   'A');    // 앞
+             ax(FRAME.up.clone().normalize(),  PAL.i.good,    'S');    // 위(등쪽)
+             ax(FRAME.left.clone().normalize(),PAL.i.cathode, 'L'); }  // 좌
+  else { ax(new THREE.Vector3(1,0,0),PAL.i.anode,'X'); ax(new THREE.Vector3(0,1,0),PAL.i.good,'Y'); ax(new THREE.Vector3(0,0,1),PAL.i.cathode,'Z'); } }
 //  ══ 전류 경로 ════════════════════════════════════════════════════════════
 //  TI 는 두 채널의 전류 간섭이 본질인데, 지금 화면은 어느 전극이 어느 짝인지 색으로만
 //  알려준다. 채널의 +/− 를 잇는 아크를 그려 **짝과 극성**을 눈에 보이게 한다.
@@ -813,7 +1098,7 @@ function buildArcs(r){
       const pg=new THREE.BufferGeometry();
       pg.setAttribute('position',new THREE.BufferAttribute(new Float32Array(np*3),3));
       const pts=new THREE.Points(pg,new THREE.PointsMaterial(
-        {color:col,size:3.2+2.6*w,sizeAttenuation:true,transparent:true,opacity:.95,depthTest:false}));
+        {color:col,size:(3.2+2.6*w)*SCALE,sizeAttenuation:true,transparent:true,opacity:.95,depthTest:false}));
       pts.renderOrder=3; pts.visible=false; ARC_ROOT.add(pts);
       //  from/to 를 적어 둔다 — 입자는 반드시 + → − 로 흐른다(극성이 곧 정보다)
       ARCS.push({ch:ci, slot:slot||null, from:a, to:b, w, np, curve, line, pts, geo:pg});
@@ -954,7 +1239,7 @@ function setFMode(m){ if(m!=='intensity'&&!RESULT)return; FMODE=m;
   else if(m==='af'){ fetchAF(); }
   else if(LAST){ renderCore(LAST); } }
 async function fetchAF(){ if(!LAST)return; try{
-  const d=await (await fetch('/api/affield',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({montage:LAST.best,target:curTargetSpec()})})).json();
+  const d=await (await fetch('/api/affield',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ich_max:curIch(),montage:LAST.best,target:curTargetSpec()})})).json();
   if(d.error){ console.warn(d.error); return; } renderAF(d); }catch(e){ console.warn(e); } }
 function renderAF(d){ const af=d.af,mx=d.afmax||Math.max(...af)||1,col=ptGeo.attributes.color.array;
   for(let i=0;i<af.length;i++){ const c=inferno(Math.min(af[i]/mx,1)); col[i*3]=c[0];col[i*3+1]=c[1];col[i*3+2]=c[2]; }
@@ -999,7 +1284,7 @@ function resolCompute(){ if(!driveArr||!ptGeo)return; const frac=+document.getEl
 async function fetchResol(){ if(!LAST)return; const frac=+document.getElementById('resolSl').value/100;
   const out=document.getElementById('resolOut'); out.innerHTML='<span style="color:var(--dim)">'+t2('정밀 계산 중…','refining…')+'</span>';
   try{ const d=await (await fetch('/api/resolution',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({montage:LAST.best,target:curTargetSpec(),mode:(FMODE==='af'?'af':'field'),ref:resolRef,frac})})).json();
+      body:JSON.stringify({ich_max:curIch(),montage:LAST.best,target:curTargetSpec(),mode:(FMODE==='af'?'af':'field'),ref:resolRef,frac})})).json();
     if(d.error){ out.innerHTML='<span style="color:var(--dim)">'+d.error+'</span>'; return; }
     const vstr=d.Vact>=1000?(d.Vact/1000).toFixed(2)+' cm³':Math.round(d.Vact)+' mm³';
     out.innerHTML=`${LANG==='ko'?'활성부피':'vol'} <b>${vstr}</b> · ${LANG==='ko'?'유효지름':'diam'} <b style="color:${PAL.gold}">${d.diam.toFixed(1)} mm</b> · ${LANG==='ko'?'표적커버리지':'cov'} <b>${d.coverage.toFixed(0)}%</b> · ${LANG==='ko'?'정밀도(표적내)':'prec'} <b>${d.precision.toFixed(0)}%</b>`;
@@ -1007,11 +1292,11 @@ async function fetchResol(){ if(!LAST)return; const frac=+document.getElementByI
 function dimCloud(on){ if(!ptGeo)return; const col=ptGeo.attributes.color.array; if(on){ for(let i=0;i<col.length;i+=3){ col[i]=.08;col[i+1]=.09;col[i+2]=.12; } ptGeo.attributes.color.needsUpdate=true; } }
 function clearEfield(){ [efE1,efE2,efPts].forEach(o=>{ if(o){ scene.remove(o); o.geometry.dispose(); o.material&&o.material.dispose(); } }); efE1=efE2=efPts=null; efData=null; rayHits=[]; if(pickMarker)pickMarker.visible=false; }
 function selectRayPoint(){ if(!rayHits.length||!efData)return; const i=rayHits[rayIdx].index,p=efData.pos[i];
-  if(!pickMarker){ pickMarker=new THREE.Mesh(new THREE.SphereGeometry(2.7,16,16),new THREE.MeshBasicMaterial({color:PAL.i.pick})); scene.add(pickMarker); }
+  if(!pickMarker){ pickMarker=new THREE.Mesh(new THREE.SphereGeometry(2.7*SCALE,16,16),new THREE.MeshBasicMaterial({color:PAL.i.pick})); scene.add(pickMarker); }
   pickMarker.position.set(p[0]-centroid[0],p[1]-centroid[1],p[2]-centroid[2]); pickMarker.visible=true; pickPoint(i); }
 function stepDepth(d){ if(!rayHits.length)return; rayIdx=Math.max(0,Math.min(rayHits.length-1,rayIdx+d)); selectRayPoint(); }
 async function fetchEfield(){ if(!LAST)return; try{
-  const d=await (await fetch('/api/efield',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({montage:LAST.best,target:curTargetSpec()})})).json();
+  const d=await (await fetch('/api/efield',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ich_max:curIch(),montage:LAST.best,target:curTargetSpec()})})).json();
   if(d.error){ console.warn(d.error); return; } buildEfield(d); }catch(e){ console.warn(e); } }
 function buildEfield(d){ clearEfield(); const N=d.pos.length,L=8.0,emax=d.emax||1;
   const p1=new Float32Array(N*6),c1=new Float32Array(N*6),p2=new Float32Array(N*6),c2=new Float32Array(N*6),pp=new Float32Array(N*3);
@@ -1024,9 +1309,9 @@ function buildEfield(d){ clearEfield(); const N=d.pos.length,L=8.0,emax=d.emax||
     return new THREE.LineSegments(g,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.92})); };
   efE1=mkLS(p1,c1); efE2=mkLS(p2,c2); scene.add(efE1); scene.add(efE2);
   const gp=new THREE.BufferGeometry(); gp.setAttribute('position',new THREE.BufferAttribute(pp,3));
-  efPts=new THREE.Points(gp,new THREE.PointsMaterial({size:4,transparent:true,opacity:0})); scene.add(efPts); efData=d; }
+  efPts=new THREE.Points(gp,new THREE.PointsMaterial({size:4*SCALE,transparent:true,opacity:0})); scene.add(efPts); efData=d; }
 async function pickPoint(i){ if(!efData||!LAST)return; try{
-  const pf=await (await fetch('/api/pointfield',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({montage:LAST.best,target:curTargetSpec(),vi:efData.idx[i]})})).json();
+  const pf=await (await fetch('/api/pointfield',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ich_max:curIch(),montage:LAST.best,target:curTargetSpec(),vi:efData.idx[i]})})).json();
   if(pf.error){ console.warn(pf.error); return; } showPointPanel(pf); }catch(e){ console.warn(e); } }
 let curPF=null;
 function showPointPanel(pf){ curPF=pf; document.getElementById('fpanel').style.display='block';
@@ -1081,7 +1366,7 @@ async function loadEnvelope(r){
   try{
     const d=await (await fetch('/api/pointfield',{method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({montage:r.best,target:curTargetSpec(),xyz:c})})).json();
+      body:JSON.stringify({ich_max:curIch(),montage:r.best,target:curTargetSpec(),xyz:c})})).json();
     if(d.error||d.a1==null){ box.style.display='none'; return; }
     box.style.display='block'; ENV_DATA=d; renderEnvelope();
   }catch(e){ box.style.display='none'; }
@@ -1293,7 +1578,8 @@ function renderTop(){ const R=rankPareto().slice(0,5),box=document.getElementByI
     box.appendChild(d); });
   document.getElementById('topbox').style.display=R.length?'block':'none'; }
 
-async function compute(){ const need=MODE==='dual'?8:4; if(SEL.size<need){ toast(MODE==='dual'?'4채널 이중 TI는 전극 8개 이상 선택하세요.':t('needElec'),'err'); return; } const req={target:curTargetSpec(),allowed:[...SEL],mode:MODE,weights:W(),pctl:50,k:MODE==='gevd'?+document.getElementById('kval').value:null,f1:+f1.value,f2:+f2.value}; if(MODE==='dual')req.freqs=[+df1.value,+df2.value,+df3.value,+df4.value]; if(MODE==='gevd')req.pmax_rel=+document.getElementById('pmaxval').value; if(MODE==='timemux'){req.k_slots=+document.getElementById('kslots').value;req.max_elec=+document.getElementById('maxelec').value;req.m1_floor=+document.getElementById('m1floor').value;}
+async function compute(){ if(curIch()==null){ toast(LANG==='ko'?'자극 전류를 먼저 입력하세요.':'Enter the stimulation current first.','err'); document.getElementById('ichmax').focus(); return; }
+  const need=MODE==='dual'?8:4; if(SEL.size<need){ toast(MODE==='dual'?'4채널 이중 TI는 전극 8개 이상 선택하세요.':t('needElec'),'err'); return; } const req={target:curTargetSpec(),allowed:[...SEL],mode:MODE,weights:W(),pctl:50,ich_max:curIch(),k:MODE==='gevd'?+document.getElementById('kval').value:null,f1:+f1.value,f2:+f2.value}; if(MODE==='dual')req.freqs=[+df1.value,+df2.value,+df3.value,+df4.value]; if(MODE==='gevd')req.pmax_rel=+document.getElementById('pmaxval').value; if(MODE==='timemux'){req.k_slots=+document.getElementById('kslots').value;req.max_elec=+document.getElementById('maxelec').value;req.m1_floor=+document.getElementById('m1floor').value;}
   s4lClear();   // 새 몽타주를 계산하면 옛 Sim4Life 결과는 더 이상 이 화면의 것이 아니다
   const run=document.getElementById('run'); run.disabled=true; run.textContent='…'; document.getElementById('prog').classList.add('on'); setProg(0.02,''); progStart();
   try{ const {job}=await (await fetch('/api/optimize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(req)})).json(); const t0=performance.now();
@@ -1359,17 +1645,44 @@ async function s4lCancel(){
 async function s4lSendMontage(){
   if(!LAST||!LAST.best){ toast(t2('먼저 계산을 눌러 몽타주를 만드세요.','Run Compute first to produce a montage.'),'err'); return; }
   const b=LAST.best;
-  if(!b.ch1||!b.ch2||b.ch1.length!==2||b.ch2.length!==2){
-    toast(t2('2쌍 몽타주(classic·NSGA)만 보낼 수 있습니다. 분산·이중TI·시분할은 채널 구조가 달라 지원하지 않습니다.',
-             'Only two-pair montages (classic / NSGA) can be sent. Distributed, dual-TI and time-mux have a different channel structure.'),'err'); return; }
-  const nm=`${b.ch1[0]}/${b.ch1[1]} × ${b.ch2[0]}/${b.ch2[1]} @${b.ratio}`;
-  if(!await ask(nm+t2('\n\nSim4Life 로 보내 머리 전체를 풉니다.\n약 7분 — 전에 같은 분석을 했다면 즉시 꺼내옵니다.\n\n진행할까요?',
-                     '\n\nSend to Sim4Life and solve the whole head.\n~7 min — instant if this exact analysis was run before.\n\nProceed?'))) return;
+  //  ★채널 하나 = 전극 쌍 하나여야 보낼 수 있다. Sim4Life 내보내기가 만드는 것이 **2단자
+  //  문제**(한 전극 1 V·한 전극 0 V·나머지 부유)이기 때문이다. 이중TI 는 채널이 4개라도
+  //  전부 쌍이라 들어맞는다. 분산 자극은 채널이 **여러 전극에 걸친 전류 분포**라 표현 자체가
+  //  안 된다 — 셋을 "지원 안 함"으로 뭉뚱그리면 이유가 다른 것이 안 보인다.
+  const dual = (b.dual && b.systemA && b.systemB) ? {A:b.systemA, B:b.systemB} : null;
+  const tslots = (b.timemux && b.slots && b.slots.length) ? b.slots : null;
+  const tmux = (tslots && tslots.length>=2) ? {slots:tslots} : null;
+  //  ⚠ 시분할이 **1슬롯으로 수렴**하는 일이 흔하다(그러면 시분할이 아니라 그냥 2쌍 몽타주다).
+  //  그 경우 classic 으로 보낸다 — `tmax_timeavg` 는 K=1 이면 닫힌 해 `tmax` 로 넘기므로
+  //  리드필드 쪽 값도 정확히 같다. 이걸 안 하면 1슬롯 결과가 "분산이라 못 보낸다"로 거부된다.
+  const single = (b.ch1 && b.ch2 && b.ch1.length===2 && b.ch2.length===2)
+    ? {ch1:b.ch1, ch2:b.ch2, ratio:b.ratio||1.0}
+    : (tslots && tslots.length===1 && tslots[0].ch1 && tslots[0].ch2)
+    ? {ch1:tslots[0].ch1, ch2:tslots[0].ch2, ratio:tslots[0].ratio||1.0} : null;
+  if(!dual && !tmux && !single){
+    toast(t2('분산 자극은 보낼 수 없습니다 — 채널이 전극 쌍이 아니라 여러 전극에 걸친 전류 분포라 2단자 솔브로 표현되지 않습니다.',
+             'Distributed TI cannot be sent: a channel is a current distribution over many electrodes, not a pair, so a two-terminal solve cannot express it.'),
+      'err'); return; }
+  const nm = tmux
+    ? tmux.slots.map((s,i)=>`${i+1} ${s.ch1[0]}/${s.ch1[1]} × ${s.ch2[0]}/${s.ch2[1]}  duty ${s.duty}`).join('\n')
+    : dual
+    ? `A ${dual.A.ch1[0]}/${dual.A.ch1[1]} × ${dual.A.ch2[0]}/${dual.A.ch2[1]}\nB ${dual.B.ch1[0]}/${dual.B.ch1[1]} × ${dual.B.ch2[0]}/${dual.B.ch2[1]}`
+    : `${single.ch1[0]}/${single.ch1[1]} × ${single.ch2[0]}/${single.ch2[1]} @${single.ratio}`;
+  const nch = tmux ? 2*tmux.slots.length : dual ? 4 : 2;
+  //  채널당 약 5분(실측 254~409초). 시분할은 방향 표본 합성이라 분석 단계도 몇 분 더 든다.
+  const mins = Math.round(nch*5 + (tmux ? 6 : 0));
+  if(!await ask(nm+t2(`\n\nSim4Life 로 보내 머리 전체를 풉니다.\n채널 ${nch}개 · 약 ${mins}분 — 전에 같은 분석을 했다면 즉시 꺼내옵니다.\n\n진행할까요?`,
+                     `\n\nSend to Sim4Life and solve the whole head.\n${nch} channels · ~${mins} min — instant if this exact analysis was run before.\n\nProceed?`))) return;
   document.getElementById('s4lprog').style.display='block';
   s4lSet('s4lstat',t2('요청','requested')); s4lSet('s4llog',''); document.getElementById('s4lbox').style.display='none';
   let r;
   try{ r=await (await fetch('/api/montage/send',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ch1:b.ch1,ch2:b.ch2,ratio:b.ratio||1.0,target:curTargetSpec()})})).json(); }
+        body:JSON.stringify(tmux
+          ? {ich_max:curIch(), timemux:tmux, target:curTargetSpec()}
+          : dual
+          ? {ich_max:curIch(), dual:dual, target:curTargetSpec()}
+          : {ich_max:curIch(), ch1:single.ch1, ch2:single.ch2, ratio:single.ratio,
+             target:curTargetSpec()})})).json(); }
   catch(e){ s4lSet('s4lstat',t2('오류','error')); s4lSet('s4llog',String(e)); return; }
   if(r.error){ s4lSet('s4lstat',t2('거부','rejected')); s4lSet('s4llog',r.error); return; }
   S4LJOB=r.job; s4lPoll();
@@ -1482,7 +1795,7 @@ function progStop(){ clearInterval(progIV); progIV=0; }
 function setProg(p,st){ document.getElementById('pfill').style.width=(p*100).toFixed(0)+'%'; document.getElementById('ppct').textContent=(p*100).toFixed(0)+'%';
   const k='st_'+String(st).replace(/[ -]/g,''),v=t(k); document.getElementById('pstage').textContent=(v===k?st:v); }
 
-async function loadMontage(m){ const r=await (await fetch('/api/field',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({montage:m,target:curTargetSpec(),f1:+f1.value,f2:+f2.value})})).json();
+async function loadMontage(m){ const r=await (await fetch('/api/field',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ich_max:curIch(),montage:m,target:curTargetSpec(),f1:+f1.value,f2:+f2.value})})).json();
   if(r.error)return; renderCore(r); loadEnvelope(r); if(FMODE!=='intensity')setFMode(FMODE); }
 function onResult(r,secs){ RESULT=true; r._secs=secs; r._method=r.method; r._np=r.n_pareto; r._ne=r.n_eval; r._hv=r.hypervolume; PARETO=r.pareto||[]; renderCore(r); loadEnvelope(r);
   document.getElementById('fmEf').disabled=false; document.getElementById('fmAf').disabled=false; if(FMODE!=='intensity')setFMode(FMODE);

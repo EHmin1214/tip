@@ -27,7 +27,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 from .. import ti, metrics
-from ..config import ITOTAL, IMAX
+from ..config import ITOTAL
 from .. import config as _C          # imported as a module so the constants can be switched
                                      # at runtime (a `from ... import X` would bind at import)
 
@@ -44,14 +44,27 @@ def _cnorm(r, budget=None):
     to split a budget per system).
     The per-electrode cap IMAX applies in both cases.
 
+    ★`imax = None` means **no cap was ever established for this head** — `Protocol` has said
+    so since it was written ("None = no cap", and `Protocol.label` prints it) but this
+    function never implemented it and divided by None instead. That crashed the rat the
+    moment anything ran without a declared protocol: the Sim4Life worker is a separate
+    process, so `tools/s4l/s4l_montage.py` died on every rat montage.
+    No cap is `inf` here, and it provably never binds either way:
+      · max_channel — min(budget/max(1,r), inf) = budget/max(1,r), the pin itself
+      · total       — min(b/(1+r), inf) = b/(1+r), which is <= b/max(1,r) for every r > 0
+    So this only ever removes a crash; it cannot change a number that used to come out.
+    ⚠ Do **not** fall back to `p.budget` here. A process that never declared a protocol
+    carries the model default (rat: 0.1 mA), so if the operator had typed anything else the
+    cap would silently clip the montage to a current they did not ask for.
+
     ★The rule comes from `protocol.current()` — the harness declares it with
     `with protocol.use(...)`, and with nothing declared it falls back to `config`, so every
     pre-existing caller behaves exactly as before."""
     from .. import protocol as _P
     p = _P.current()
     r = float(r)
-    imax = IMAX if p.imax is None else p.imax
-    cap = imax / max(1.0, r)
+    imax = _C.IMAX if p.imax is None else p.imax
+    cap = math.inf if imax is None else imax / max(1.0, r)
     if budget is None and p.current_norm == "max_channel":
         return min(p.budget / max(1.0, r), cap)
     b = (p.budget if p.current_norm == "total" else ITOTAL) if budget is None else budget
@@ -63,8 +76,8 @@ def _cnorm_vec(r, budget=None):
     from .. import protocol as _P
     p = _P.current()
     r = np.asarray(r, float)
-    imax = IMAX if p.imax is None else p.imax
-    cap = imax / np.maximum(1.0, r)
+    imax = _C.IMAX if p.imax is None else p.imax
+    cap = np.inf if imax is None else imax / np.maximum(1.0, r)   # None = no cap, see _cnorm
     if budget is None and p.current_norm == "max_channel":
         return np.minimum(p.budget / np.maximum(1.0, r), cap)
     b = (p.budget if p.current_norm == "total" else ITOTAL) if budget is None else budget

@@ -51,6 +51,17 @@ def _caps(Imax=None):
     p = _P.current()
     cap = (p.imax if p.imax is not None else C.IMAX) if Imax is None else float(Imax)
     tot = p.budget if p.current_norm == "total" else C.ITOTAL
+    #  ★Unlike `classic._cnorm`, "no cap" cannot be `inf` here: this number is a **scale
+    #  factor** (the solution is normalised so the largest electrode current equals it) and
+    #  an optimiser bound. Substituting anything finite would set the absolute scale of
+    #  every field this method reports, out of thin air. So say so instead of inventing it.
+    #  The GUI never reaches this — it always declares `imax`, falling back to the current
+    #  the operator typed — so this fires only for a caller that declared no protocol.
+    if cap is None:
+        raise ValueError(
+            f"model {C.MODEL_NAME!r} has no per-electrode current cap (`imax`), and this "
+            f"method needs one as the current scale, not merely as a limit. Declare it with "
+            f"`protocol.use(Protocol(..., imax=...))`, or pass `Imax=` to this call.")
     return float(cap), float(tot)
 
 

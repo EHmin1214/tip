@@ -46,7 +46,7 @@ def total_current(best):
     cannot be read as "sequential wins" without saying under which constraint; it currently
     refuses any value but "peak" rather than silently measuring the wrong thing."""
     from .optimize.classic import channel_currents
-    from .optimize.dualti import DUAL_BUDGET
+    from .optimize.dualti import dual_budget
     if best.get("timemux"):
         return max(total_current(c) for c in best["components"])
     if best.get("complex"):
@@ -54,7 +54,16 @@ def total_current(best):
     if best.get("dual"):
         t = 0.0
         for sk in ("systemA", "systemB"):
-            i1, i2 = channel_currents(best[sk]["ratio"], DUAL_BUDGET); t += i1 + i2
+            #  ★`dual_budget()`, not the `DUAL_BUDGET` constant. The constant hard-codes a
+            #  total rule (ITOTAL/2 per system), so it is right under FAIR — the default here —
+            #  and wrong under every other rule. `benchmark(protocol=...)` documents TIPLITE as
+            #  an argument, and under it each system really draws the pinned channel: the
+            #  constant reported 해마 L and 시상 L as I_total 1.00 mA when the montage draws
+            #  ~4.0 mA. `dual_budget()` reads `protocol.current()` — the same source
+            #  `dualti._cfields` uses to build the fields these metrics are measured on — so
+            #  the current counter and the field can no longer disagree.
+            #  FAIR output verified bit-identical before and after (2026-08-21).
+            i1, i2 = channel_currents(best[sk]["ratio"], dual_budget()); t += i1 + i2
         return t
     if "currents" in best:
         c = best["currents"]
@@ -350,6 +359,13 @@ def benchmark(lf, targets, methods=None, weights=(0.5, 0.5, 0.5), pctl=50, verbo
     Returns {label: {"n": ..., "methods": {m: {iso, dir, I_total, I_raw, scale, protocol, best}}}}.
     """
     from . import protocol as P
+    #  ★A benchmark that measured nothing must not return successfully. `standard_targets()`
+    #  used to hand back `[]` after silently failing to find its masks, and this loop then
+    #  returned `{}` without printing a line — indistinguishable from a clean pass.
+    targets = list(targets)
+    if not targets:
+        raise ValueError("benchmark() 에 표적이 하나도 없다. 빈 표는 통과가 아니라 결함이다 "
+                         "— `standard_targets()` 의 반환값이나 `which=` 필터를 확인할 것.")
     prot = protocol if protocol is not None else P.FAIR
     methods = methods or list(METHODS)
     names = [e for e in lf.names if lf.has(e)]
@@ -380,37 +396,82 @@ def standard_targets(lf, which=None):
     `which` filters by label substring, e.g. ["해마", "시상"].
 
     ⚠ The labels stay Korean on purpose: research scripts under `research/` call this with
-    `which=["해마"]` and renaming them here would break those callers silently."""
+    `which=["해마"]` and renaming them here would break those callers silently.
+
+    ★Paths go through `C.inputs(name)` — which searches `inputs/`'s subfolders — and
+    `C.MASKS_DIR`, **never** `os.path.join(C.INPUTS_DIR, name)`. They were the latter, written
+    before the 2026-08-13 reorg moved these files into `inputs/geometry/` and
+    `inputs/masks/mida/`. With a bare `except Exception: pass` around the load, every path
+    missed and this returned **an empty list in silence**: `benchmark(lf, standard_targets(lf))`
+    ran to completion, printed nothing and returned `{}` — a benchmark that looks like it
+    passed having measured nothing. It stayed that way long enough for
+    `research/tvb/_targets.py` to be written around it. So nothing here is optional any more:
+    a missing or unreadable core file raises, a mask that does not fit the leadfield raises,
+    and a `which` that matches nothing raises.
+
+    ★This set is **MIDA's** — the masks are keyed to the human leadfield's voxel rows, so it
+    refuses another head rather than guessing. That refusal matters more than it looks: the rat
+    leadfield has 1,904,254 voxels against MIDA's 1,907,678, a 0.18% difference, so a
+    mismatched mask does not conveniently blow up — it indexes a different brain.
+    """
     import os
     import json
     from . import Target
-    dd = C.INPUTS_DIR
+
+    if C.MODEL_NAME != "human":
+        raise ValueError(
+            f"standard_targets() 는 MIDA(사람) 전용이다 — 현재 모델은 {C.MODEL_NAME!r}. "
+            f"여기 마스크들은 사람 리드필드의 복셀 행에 묶여 있어 다른 머리에 쓰면 엉뚱한 "
+            f"복셀을 가리킨다. 다른 머리는 (label, Target, direction) 세 쌍을 직접 만들어 "
+            f"`benchmark()` 에 넘길 것 — 라벨 기반 표적 생성 예시는 `gui/app.py` 의 "
+            f"`_label_targets()` 에 있다. (이 머리의 표준 표적 세트는 아직 정해진 바 없다.)")
+
+    nvox = len(lf.coords())
+
+    def _load(fn):
+        p = C.inputs(fn)
+        if not os.path.exists(p):
+            raise FileNotFoundError(
+                f"표준 표적 파일이 없다: {fn} (`config.inputs()` 가 {p} 로 풀었다). "
+                f"이 함수는 하위폴더까지 뒤지므로, 없다는 건 입력 세트가 불완전하다는 뜻이다.")
+        return np.load(p)
+
+    def _fits(fn, arr):
+        """★구조상 반드시 이 값 — 마스크 길이는 리드필드 복셀 수와 같아야 한다."""
+        if arr.shape[-1] != nvox:
+            raise ValueError(f"{fn}: 마스크 길이 {arr.shape[-1]} != 리드필드 복셀 {nvox} "
+                             f"— 다른 머리의 마스크다.")
+        return arr
+
     out = []
-    try:
-        HAX = np.load(os.path.join(dd, "hipaxes1010.npz"))
-        HIP = np.load(os.path.join(dd, "hipmask1010.npy"))
-        out.append(("해마 L", Target.from_mask(lf, HIP[0], off_subsample=22000), HAX["nL"]))
-        out.append(("해마 R", Target.from_mask(lf, HIP[1], off_subsample=22000), HAX["nR"]))
-    except Exception:
-        pass
-    tp = os.path.join(dd, "thalamus_mask.npy")
-    if os.path.exists(tp):
-        TH = np.load(tp)
-        out.append(("시상 L", Target.from_mask(lf, TH[0], off_subsample=22000), None))
-    mdir = os.path.join(dd, "masks"); mpath = os.path.join(mdir, "manifest.json")
-    if os.path.exists(mpath):
-        try:
-            man = json.load(open(mpath, encoding="utf-8"))
-        except Exception:
-            man = []
-        for m in man:
-            if m["id"] in ("hippocampus", "thalamus"):
+    HAX = _load("hipaxes1010.npz")
+    HIP = _fits("hipmask1010.npy", _load("hipmask1010.npy"))
+    out.append(("해마 L", Target.from_mask(lf, HIP[0], off_subsample=22000), HAX["nL"]))
+    out.append(("해마 R", Target.from_mask(lf, HIP[1], off_subsample=22000), HAX["nR"]))
+    TH = _fits("thalamus_mask.npy", _load("thalamus_mask.npy"))
+    out.append(("시상 L", Target.from_mask(lf, TH[0], off_subsample=22000), None))
+
+    #  The extra structures. Missing manifest = a reduced set, which changes what "the standard
+    #  targets" means — degraded but still usable, so it is announced rather than raised (the
+    #  same call `gui/app.py` makes when a head has no neural labels). A file the manifest
+    #  promised and does not deliver **is** an error.
+    mdir = os.path.join(C.MASKS_DIR, "mida")
+    mpath = os.path.join(mdir, "manifest.json")
+    if not os.path.exists(mpath):
+        print(f"[benchmark] ⚠ {mpath} 가 없다 — 표준 표적이 해마·시상 {len(out)}개로 줄었다. "
+              f"이 표는 축소된 세트의 결과다.", flush=True)
+    else:
+        for m in json.load(open(mpath, encoding="utf-8")):
+            if m["id"] in ("hippocampus", "thalamus"):   # already above — avoid duplicates
                 continue
-            try:
-                arr = np.load(os.path.join(mdir, m["file"]))
-            except Exception:
-                continue
-            out.append((m.get("ko", m["id"]) + " L", Target.from_mask(lf, arr[0], off_subsample=22000), None))
+            arr = _fits(m["file"], np.load(os.path.join(mdir, m["file"])))
+            out.append((m.get("ko", m["id"]) + " L",
+                        Target.from_mask(lf, arr[0], off_subsample=22000), None))
+
     if which:
-        out = [t for t in out if any(w in t[0] for w in which)]
+        sel = [t for t in out if any(w in t[0] for w in which)]
+        if not sel:
+            raise ValueError(f"which={which!r} 가 아무 표적과도 안 맞는다 "
+                             f"(라벨은 한국어다). 가능한 값: {[t[0] for t in out]}")
+        out = sel
     return out

@@ -50,11 +50,16 @@ def _stamp(path):
         return None
 
 
-def montage_key(ch1, ch2, ratio, itotal, smash=None, leadfield_set=None):
+def montage_key(ch1, ch2, ratio, itotal, smash=None, leadfield_set=None,
+                pairs=None, currents=None, combine=None, compose=None, duties=None):
     """Return `(key, spec)` for a montage analysis.
 
     The spec is returned alongside so that "what was this result?" can be answered later
     **without inverting the hash**. It is stored inside the cache slot.
+
+    `pairs` / `currents` / `combine` describe montages with more than two channels (dual TI
+    has four). ⚠ They are added to the spec **only when present**, so a classic two-pair
+    montage hashes to exactly the key it always did and every cached result stays valid.
     """
     spec = {
         "kind": "montage_s4l",
@@ -68,6 +73,20 @@ def montage_key(ch1, ch2, ratio, itotal, smash=None, leadfield_set=None):
         "leadfield_set": leadfield_set or getattr(C, "LEADFIELD_SET", "?"),
         "model": _stamp(smash) if smash else None,
     }
+    #  More than two channels: the currents no longer follow from one ratio, and the grouping
+    #  decides how the envelope is built, so both belong in the key. Two-channel montages add
+    #  nothing here and keep their historical key.
+    if pairs is not None and len(pairs) > 2:
+        spec["pairs"] = [list(p) for p in pairs]
+        spec["currents"] = [round(float(c), 6) for c in (currents or [])]
+        spec["combine"] = [list(g) for g in (combine or [])]
+    #  Two montages can share every pair and current and still be different stimulations:
+    #  run at once (dual TI) or one slot at a time (time multiplexing), and with which duty.
+    #  Both therefore belong in the key. Added only when not the default, so classic and dual
+    #  keys stay exactly where they were.
+    if compose and compose != "sum":
+        spec["compose"] = compose
+        spec["duties"] = [round(float(w), 6) for w in (duties or [])]
     blob = json.dumps(spec, sort_keys=True, ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()[:16], spec
 

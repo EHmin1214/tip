@@ -74,6 +74,10 @@ class Model:
     #  A mouse head is ~1/30 the diameter of a human one, so the same current gives a far
     #  larger field. These are per-model, and `None` means nobody has established it yet.
     ich_max: Optional[float] = None         # mA held by the larger channel
+    #  Is `ich_max` an established convention for this head, or just a working value someone
+    #  picked? A filled-in field looks equally authoritative either way, and current scales
+    #  every absolute field exactly, so the UI has to be able to say which it is.
+    ich_established: bool = False
     imax: Optional[float] = None            # per-electrode cap (mA)
     ecap: Optional[float] = None            # off-target envelope cap (V/m)
 
@@ -171,6 +175,7 @@ HUMAN = Model(
     off_default="gm_wm",
     neural=("gm",),
     ich_max=1.0,
+    ich_established=True,            # the tip.lite convention, published with their values
     imax=2.0,
     ecap=0.25,
     smash_env="TIP_REBUILD_SMASH",
@@ -305,7 +310,26 @@ RAT = Model(
     positions="pos_rat.json",
     n_elec=37,                       # PO8 excluded — it is the reference
     ref_elec="PO8",
-    leadfield_dir="leadfield_rat",
+    #  ★2026-08-20: switched from `leadfield_rat` (EM LF **port mode**: electrode k at 1 V
+    #  with all 36 others held at 0 V) to a re-solve under the **montage convention** — one
+    #  electrode driven, the reference at 0 V, every other electrode **floating**, which is
+    #  what a real montage and `s4l_montage.set_pair` do. The old convention shorts 36 PEC
+    #  pins together on the scalp, a low-impedance path across the head that no experiment
+    #  has, and it is not a small effect: it drew 1.69-3.73x the current at 1 V (median
+    #  2.27x), so the field per mA came out that much too small.
+    #
+    #  Verified against a direct Sim4Life solve of `O1-C5 | PO3-AF3` (left hippocampus,
+    #  0.1 mA), which is the only ground truth this head has:
+    #                     M1        M2       M3
+    #      Sim4Life     1.2494    1.9991   10.477 %
+    #      port mode    0.6807    2.1653    9.536     (M1 -45.5 %)
+    #      this set     1.2485    1.9992   10.505     (M1  -0.1 %)
+    #  `leadfield_rat` is kept on disk to reproduce numbers published before this date; every
+    #  absolute rat V/m from it is about 1.8x low. M2, M3 and montage rankings barely moved.
+    #  Go back with `TIP_RAT_LEADFIELD_DIR=leadfield_rat`. It is a **separate variable from
+    #  the human's** `TIP_LEADFIELD_DIR` on purpose: both are read once at import, so a
+    #  shared name would silently point the other head at a set that is not its own.
+    leadfield_dir=os.environ.get("TIP_RAT_LEADFIELD_DIR", "leadfield_rat_float"),
     leadfield_style="direct",        # {electrode}.npy, already 1 mA normalised
     midline_x=None,                  # oblique — see below
     midline_normal=(-0.42439439910665616, -0.8855478420281918, -0.18892965221508484),
@@ -322,9 +346,23 @@ RAT = Model(
     },
     off_default="brain",
     neural=("gm",),
-    #  Deliberately unset: nobody has established what current a rat protocol runs at, and a
-    #  plausible-looking number here would quietly set the scale of every reported field.
-    ich_max=None,
+    #  Measured on the solved set (2026-08-18): injected current 0.261-0.717 mA per volt
+    #  (median 0.295), median brain |E| 0.725-2.570 V/m per mA (median 1.203), electrode to
+    #  nearest brain voxel 2.46-4.83 mm. **C6, CP6 and P6 draw 1.5-2.7x the current of the
+    #  rest** — all three are the only electrodes with temporalis muscle within 2 mm
+    #  (corr(I, muscle fraction) = +0.80; muscle 0.461 S/m against fat's 0.0776). Physics,
+    #  not a defect, and each field is normalised to 1 mA regardless. Note the left-side
+    #  counterparts C5/CP5/P5 have no muscle under them: the same lopsidedness as the midline.
+    #
+    #  ⚠ 0.1 mA is an **operator's protocol choice**, not a measured or published value for
+    #  this phantom — set on request 2026-08-19 so the GUI starts with a filled field. It was
+    #  deliberately `None` before, because current is first order in Tmax: it scales M1
+    #  exactly and leaves M2, M3 and every ranking untouched, so a wrong number does not look
+    #  wrong anywhere, it just makes every absolute field quietly wrong. Treat any absolute
+    #  rat number as "per 0.1 mA on the larger channel" and say so when reporting it.
+    #  `imax` and `ecap` stay unset: nobody has established a per-electrode cap or an
+    #  off-target envelope limit for a rat, and those two do change which montage wins.
+    ich_max=0.1,
     imax=None,
     ecap=None,
     smash_env="TIP_RAT_SMASH",

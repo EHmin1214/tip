@@ -65,18 +65,30 @@ def plan(lf, target, mode="classic", allowed=None, direction=None,
 
 
 def _protocol(best, f1, f2, base_mA=None):
-    """Channels, currents and frequencies in TIBS-R form. Currents are normalised to the total
-    injected-current budget (ITOTAL), the same for classic and dual.
-    `base_mA` is kept for backward compatibility and ignored."""
+    """Channels, currents and frequencies in TIBS-R form. Currents follow **the protocol in
+    force** (`protocol.current()`), so this block reports the currents the field and the
+    metrics beside it were actually computed at.
+    `base_mA` is kept for backward compatibility and ignored.
+
+    ★Every branch reads the rule: classic through `channel_currents(r)`, dual through
+    `dual_budget()`. Dual used the `DUAL_BUDGET` constant, which forces a **total**-current
+    rule (ITOTAL/2 per system) whatever the protocol says. The GUI calls this under its
+    `max_channel` rule (`gui/app.py` `run_job` and `field_for`), so the exported protocol
+    under-reported the currents by 3.7~4.0x while `_used()` — in the same JSON response, off
+    the same montage — reported the real ones. Measured on 해마 L, 2026-08-21:
+    0.250/0.250/0.269/0.231 mA reported against 1.000/0.997/1.000/0.859 mA actually used.
+    Under a total rule `dual_budget()` is exactly ITOTAL/2, so nothing computed under FAIR
+    moves."""
     from .optimize.classic import channel_currents
-    from .optimize.dualti import DUAL_BUDGET
-    if best.get("dual"):     # 4-channel dual TI: system A (2ch) + B (2ch), four frequencies,
-                             # ITOTAL/2 per system
+    from .optimize.dualti import dual_budget
+    if best.get("dual"):     # 4-channel dual TI: system A (2ch) + B (2ch), four frequencies.
+                             # Per-system budget = the protocol's: ITOTAL/2 under a total rule,
+                             # None under max_channel so the larger channel is pinned instead.
         fq = best.get("freqs") or [f1, f2, f1 + 500, f2 + 500]
         ch = []
         for si, sk in enumerate(("systemA", "systemB")):
             s = best[sk]; a, b = s["ch1"]; c, d = s["ch2"]; r = s.get("ratio", 1.0)
-            i1, i2 = channel_currents(r, DUAL_BUDGET)
+            i1, i2 = channel_currents(r, dual_budget())
             ch.append(dict(freq_Hz=fq[2 * si], currents_mA={a: round(i1, 3), b: round(-i1, 3)}))
             ch.append(dict(freq_Hz=fq[2 * si + 1], currents_mA={c: round(i2, 3), d: round(-i2, 3)}))
         return dict(channels=ch)

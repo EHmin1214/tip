@@ -38,6 +38,7 @@ sys.path.insert(0, os.path.join(REPO, "src"))   # the tip package
 INPUTS = os.path.join(REPO, "inputs")
 OUTPUTS = os.path.join(REPO, "outputs")
 from tip.config import inputs as IN, LEADFIELD_DIR as _LFDIR   # input-file resolver
+from tip import config as C          # read C.<name> late — the head can change
 
 DD = INPUTS
 
@@ -77,12 +78,64 @@ def ti_envelope(E1, E2):
     return out
 
 
+def channels(meta):
+    """Channel names in order, and how they combine into envelopes.
+
+    A montage is N electrode pairs, one Sim4Life simulation each. `combine` groups them:
+    classic TI is one group of two, dual TI is two groups of two, and the total envelope is
+    the **sum over groups** of each group's Tmax — the rule `optimize_dual_ti` scores with
+    (`ct = etA + etB`).
+    `compose` says how the groups are put together:
+      "sum"     — classic and dual TI: the systems run at once, so their envelopes add.
+      "timeavg" — time multiplexing: only one slot is on at a time, so the neuron sees the
+                  duty-weighted average **per direction**, maximised over directions
+                  afterwards. ⚠ Not the weighted sum of each slot's Tmax: that adds maxima
+                  taken along a different direction in every slot and overestimates.
+    ⚠ Older jobs and cache entries have none of these keys, so fall back to the two-channel
+    classic shape rather than failing on them.
+    """
+    m = meta.get("montage", {})
+    cur = meta.get("currents_mA", {})
+    names = [k for k in cur if k != "itotal"]
+    names.sort(key=lambda k: int(k[2:]) if k[2:].isdigit() else 0)
+    if not names:
+        names = ["ch1", "ch2"]
+    comb = [list(g) for g in (m.get("combine") or [names[:2]])]
+    compose = m.get("compose") or "sum"
+    duties = [float(w) for w in (m.get("duties") or [1.0 / len(comb)] * len(comb))]
+    return names, comb, compose, duties
+
+
+#  Directions sampled for the time-multiplexed envelope. It has no closed form, and the
+#  sampling is **one-sided**: too few directions understate the envelope. Measured against a
+#  dense m=2048 reference on a real rat montage: m=64 puts M1 3.43% low, m=256 1.39% low,
+#  m=1024 0.26% low. 256 is what `gui/app.py` uses for the leadfield side, and both sides of
+#  the comparison must sample identically or the ratio would carry the difference.
+TIMEAVG_M = 256
+
+
+def compose_env(E, meta):
+    """The montage's envelope from its per-channel fields, following `compose`."""
+    from tip import ti as _ti
+    _n, comb, compose, duties = channels(meta)
+    if compose == "timeavg":
+        return _ti.tmax_timeavg([(E[g[0]], E[g[1]]) for g in comb], duties, m=TIMEAVG_M)
+    if compose != "sum":
+        raise ValueError("unknown compose rule %r" % compose)
+    out = None
+    for g in comb:
+        e = ti_envelope(E[g[0]], E[g[1]])
+        out = e if out is None else out + e
+    return out
+
+
 def load(out_dir, meta_path):
     meta = json.load(open(meta_path, encoding="utf-8"))
     inj = json.load(open(os.path.join(out_dir, "inj.json"), encoding="utf-8"))
     cur = meta["currents_mA"]
+    names = channels(meta)[0]
     E = {}
-    for ch in ("ch1", "ch2"):
+    for ch in names:
         e = np.load(os.path.join(out_dir, f"{ch}_E1V.npy"), mmap_mode="r")
         scale = (cur[ch] * 1e-3) / inj[ch]          # 1 V solution -> the real current
         E[ch] = (np.asarray(e) * np.float32(scale))
@@ -93,7 +146,11 @@ def load(out_dir, meta_path):
 
 def analyze(out_dir, meta_path, target_mask=None, verbose=True):
     E, sig, ax, meta, inj = load(out_dir, meta_path)
-    env = ti_envelope(E["ch1"], E["ch2"])
+    env = compose_env(E, meta)
+    #  ⚠ Current density stays **per channel**, and the safety number below is the maximum
+    #  over channels. That is right for every mode including time multiplexing: only one slot
+    #  conducts at a time, so the skin sees each slot's full current, not the duty-weighted
+    #  average. Time-averaging here would understate the peak by the duty factor.
     Jmag = {ch: np.linalg.norm(E[ch], axis=-1) * sig for ch in E}   # A/m²
 
     res = {"montage": meta["montage"], "currents_mA": meta["currents_mA"],
@@ -126,7 +183,7 @@ def analyze(out_dir, meta_path, target_mask=None, verbose=True):
 
     # ── target, if one was given ──
     if target_mask is not None:
-        bm = np.load(IN("bmask1010.npy")).astype(np.int64)
+        bm = np.load(IN(C.BMASK_FILE)).astype(np.int64)
         idx = np.where(target_mask)[0]
         ev = env[bm[idx, 0], bm[idx, 1], bm[idx, 2]]
         res["target"] = {"cells": int(len(idx)), "env_median": float(np.median(ev)),
@@ -181,32 +238,64 @@ def render_slices(env, sig, ax, out_dir, pct=99.0):
 #  grid (`*_Ebrain.npy`, 22.9 MB per channel). That is what lets a different target be
 #  evaluated **without re-solving**.
 
-#  blabel1010.npy label -> (English, Korean). Every brain voxel is one of these nine.
-#  Both languages, for the same reason as SIGMA_TISSUE above.
-BLABEL = {131: ("White matter", "백질"), 75: ("Grey matter (cortex)", "회백질(피질)"),
-          156: ("Thalamus", "시상"), 17: ("Putamen", "조가비핵"),
-          90: ("Caudate", "미상핵"), 81: ("Hippocampus", "해마"),
-          21: ("Amygdala", "편도체"), 48: ("Accumbens", "측좌핵"),
-          110: ("Hypothalamus", "시상하부")}
+#  brain label -> (English, Korean), **per head model**. Both languages, for the same reason
+#  as SIGMA_TISSUE above.
+#
+#  ⚠ These numbers are the phantom's, not a standard: 75 means cortex in MIDA and nothing at
+#  all in NeuroRat. Hard-coding the MIDA table made the whole "where does it land" breakdown
+#  come out empty for another head — empty, not wrong, which is the kind of failure nobody
+#  notices in a report.
+BLABEL_MIDA = {131: ("White matter", "백질"), 75: ("Grey matter (cortex)", "회백질(피질)"),
+               156: ("Thalamus", "시상"), 17: ("Putamen", "조가비핵"),
+               90: ("Caudate", "미상핵"), 81: ("Hippocampus", "해마"),
+               21: ("Amygdala", "편도체"), 48: ("Accumbens", "측좌핵"),
+               110: ("Hypothalamus", "시상하부")}
+#  NeuroRat: the ten structures tools/s4l/rat_extract.py writes, keyed by its RAT_LABELS.
+BLABEL_RAT = {1: ("Cerebral cortex", "대뇌피질"), 2: ("Rest of brain", "기타 뇌"),
+              3: ("Hippocampus", "해마"), 4: ("Thalamus", "시상"),
+              5: ("Caudoputamen", "선조체"), 6: ("Midbrain", "중뇌"),
+              7: ("Pons", "교뇌"), 8: ("Medulla", "연수"),
+              9: ("Cerebellum", "소뇌"), 10: ("Olfactory bulb", "후각구")}
+
+
+def blabel_table():
+    """The structure table for the head currently selected by `TIP_MODEL`.
+
+    Falls back to whatever `labels_<model>.json` the extractor wrote, so a head added later
+    still produces a breakdown instead of a silent blank.
+    """
+    if C.MODEL_NAME == "human":
+        return BLABEL_MIDA
+    if C.MODEL_NAME == "rat":
+        return BLABEL_RAT
+    p = IN("labels_%s.json" % C.MODEL_NAME)
+    if os.path.exists(p):
+        return {int(v): (k.replace("_", " "), k.replace("_", " "))
+                for k, v in json.load(open(p, encoding="utf-8")).items()}
+    return {}
 
 
 def _brain_env(out_dir):
     """Brain-voxel TI envelope (N,) — **the same voxel set and the same definition** the
     leadfield metrics use."""
-    E = {}
-    for ch in ("ch1", "ch2"):
-        p = os.path.join(out_dir, f"{ch}_Ebrain.npy")
-        if not os.path.exists(p):
-            return None
-        E[ch] = np.load(p)
     meta = json.load(open(os.path.join(out_dir, "montage.json"), encoding="utf-8"))
     inj = json.load(open(os.path.join(out_dir, "inj.json"), encoding="utf-8"))
     cur = meta["currents_mA"]
-    A = [E[ch] * np.float32((cur[ch] * 1e-3) / inj[ch]) for ch in ("ch1", "ch2")]
+    names, _comb, compose, _duties = channels(meta)
+    E = {}
+    for ch in names:
+        p = os.path.join(out_dir, f"{ch}_Ebrain.npy")
+        if not os.path.exists(p):
+            return None
+        E[ch] = np.load(p) * np.float32((cur[ch] * 1e-3) / inj[ch])
+    if compose == "timeavg":
+        #  `tmax_timeavg` contracts the last axis, so flat (N,3) is exactly what it wants.
+        return compose_env(E, meta)
     #  `ti_envelope` takes (X,Y,Z,3) and slices **along axis 0** to bound memory.
     #  ⚠ Putting the voxels on axis 0 would loop 1.9 M times and effectively hang — put them
     #    on axis 1.
-    return ti_envelope(A[0].reshape(1, -1, 1, 3), A[1].reshape(1, -1, 1, 3))[0, :, 0]
+    E4 = {k: v.reshape(1, -1, 1, 3) for k, v in E.items()}
+    return compose_env(E4, meta)[0, :, 0]
 
 
 def target_report(out_dir, target_npz, lf_metrics=None, thr_mode="target_median"):
@@ -265,7 +354,7 @@ def target_report(out_dir, target_npz, lf_metrics=None, thr_mode="target_median"
     lab = np.load(DD_BLABEL())
     inside = np.zeros(len(env), bool); inside[ti] = True
     rows = []
-    for lv, (nm, nm_ko) in BLABEL.items():
+    for lv, (nm, nm_ko) in blabel_table().items():
         m = (lab == lv)
         n = int(m.sum())
         if n == 0:
@@ -292,7 +381,7 @@ def target_report(out_dir, target_npz, lf_metrics=None, thr_mode="target_median"
 
 
 def DD_BLABEL():
-    return IN("blabel1010.npy")
+    return IN(C.BLABEL_FILE)
 
 
 if __name__ == "__main__":

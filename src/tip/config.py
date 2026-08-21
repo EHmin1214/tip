@@ -263,3 +263,96 @@ OFF_DEFAULT = MODEL.off_default
 # NEURON it had the lowest target threshold — the two yardsticks measure different things
 # (E versus the activating function).
 # Details: MIGRATION_STATUS.md §4-1 · SETUP.md §5-4
+
+
+# ── ★Switching head model at runtime (2026-08-18) ────────────────────────
+# Everything above that reads `MODEL.` is bound once, at import, from `TIP_MODEL`. The GUI
+# now lets the user pick the head from a dropdown, which means those constants have to be
+# rebindable. `use_model()` is the one function that does it.
+#
+# ⚠ It only works for code that reads `config.X` late. A module doing
+#   `from ..config import X` froze the old value and will not see the switch — that is why
+#   `optimize/classic.py` was changed to `_C.IMAX` and `gui/app.py` to `C.ICH_MAX`.
+#   `ITOTAL` stays a from-import on purpose: it is not model-derived.
+#
+# ⚠ Switching does **not** reload anything already built from the old model — a `LeadField`,
+#   a `Target`, a cached mask. The caller is responsible for rebuilding those; `gui/app.py`
+#   does it in `load_model()`.
+import re as _re                                                       # noqa: E402
+
+
+def model_derived_names():
+    """Every module global in this file whose value is computed from `MODEL`.
+
+    Read back out of the source rather than listed by hand, so that adding a constant above
+    and forgetting it here is caught instead of silently surviving a model switch with the
+    previous head's value.
+    """
+    with open(__file__, encoding="utf-8") as f:
+        src = f.read()
+    src = src.split("def model_derived_names")[0]          # ignore this function's own text
+    return set(_re.findall(r"^(\w+)\s*=\s*.*\bMODEL\b\.", src, _re.M)) | {"MODEL", "MODEL_NAME"}
+
+
+def use_model(name=None):
+    """Rebind every model-derived constant in this module. Returns the new `MODEL`.
+
+    `name=None` re-reads `TIP_MODEL` from the environment.
+    """
+    global MODEL, MODEL_NAME, BMASK_FILE, GAXES_FILE, BLABEL_FILE, POS_FILE
+    global N_ELEC, REF_ELEC, MIDLINE_X, LEFT_IS_PLUS_X
+    global LEADFIELD_REBUILD_DIR, LEADFIELD_STYLE
+    global ECAP_DEFAULT, IMAX, ICH_MAX
+    global LABEL_GM, LABEL_WM, LABEL_HIPPO, NEURAL_LABELS, OFF_LABEL_SETS, OFF_DEFAULT
+
+    if name is not None:
+        if name not in _models.REGISTRY:
+            raise ValueError(f"unknown model {name!r} (available: {sorted(_models.REGISTRY)})")
+        os.environ["TIP_MODEL"] = str(name)
+    MODEL = _models.active()
+    MODEL_NAME = MODEL.name
+
+    BMASK_FILE = MODEL.bmask
+    GAXES_FILE = MODEL.gaxes
+    BLABEL_FILE = MODEL.blabel
+    POS_FILE = MODEL.positions
+
+    N_ELEC = MODEL.n_elec
+    REF_ELEC = MODEL.ref_elec
+    MIDLINE_X = MODEL.midline_x
+    LEFT_IS_PLUS_X = MODEL.left_is_plus_x
+
+    LEADFIELD_REBUILD_DIR = os.path.join(LEADFIELD_ROOT, MODEL.leadfield_dir)
+    LEADFIELD_STYLE = MODEL.leadfield_style
+
+    ECAP_DEFAULT = MODEL.ecap
+    IMAX = MODEL.imax
+    ICH_MAX = MODEL.ich_max
+
+    LABEL_GM = MODEL.labels.get("gm")
+    LABEL_WM = MODEL.labels.get("wm")
+    LABEL_HIPPO = MODEL.labels.get("hippocampus")
+    NEURAL_LABELS = tuple(MODEL.labels[k] for k in MODEL.neural
+                          if MODEL.labels.get(k) is not None)
+    OFF_LABEL_SETS = MODEL.off_sets
+    OFF_DEFAULT = MODEL.off_default
+
+    missed = model_derived_names() - _USE_MODEL_REBINDS
+    if missed:
+        raise RuntimeError(
+            "config.use_model() does not rebind " + ", ".join(sorted(missed))
+            + " — add them, or a model switch will silently keep the previous head's value.")
+    return MODEL
+
+
+def _use_model_rebinds():
+    """The names `use_model` assigns, read off its own `global` statements."""
+    with open(__file__, encoding="utf-8") as f:
+        body = _re.sub(r"(?s)^.*?def use_model", "", f.read())
+    out = set()
+    for ln in _re.findall(r"^\s*global\s+(.+)$", body, _re.M):
+        out |= {t.strip() for t in ln.split(",")}
+    return out
+
+
+_USE_MODEL_REBINDS = _use_model_rebinds()

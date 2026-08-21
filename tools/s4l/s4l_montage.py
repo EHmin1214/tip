@@ -47,19 +47,73 @@ OUTPUTS = os.path.join(REPO, "outputs")
 import rebuild_solve_batch as R  # noqa: E402
 
 
+from tip import config as C          # noqa: E402  read C.<name> late — the head can change
+
+#  ★How each head's project is put together. These are **not** interchangeable: the two
+#  projects were built years and species apart.
+#
+#      human   bodies `<name>_ElectrodeTemplate` in the group "Cloned Templates";
+#              two BoundarySettings already exist, `src` (1 V) and `ref` (0 V), and the
+#              electrodes that are not driven carry no material at all — they are absent.
+#      rat     bodies `Elec_0.25mm <name>` in "Electrodes_0.25mm"; the project came out of a
+#              **leadfield port solve**, so its settings are `Active` (37 electrodes,
+#              TreatAsPort=True) and `Passive` (PO8). Driving a montage means turning the
+#              port mode off, putting 1 V on one electrode and 0 V on one other, and leaving
+#              the remaining 36 attached to nothing.
+#
+#  ⚠ That difference is not cosmetic — it changes the physics. See `rat_montage_check.py`.
+CONV = {
+    "human": dict(group="Cloned Templates", fmt="{}_ElectrodeTemplate",
+                  src="src", ref="ref", port=False),
+    "rat":   dict(group="Electrodes_0.25mm", fmt="Elec_0.25mm {}",
+                  src="Active", ref="Passive", port=True),
+}
+
+
+def conv():
+    c = CONV.get(C.MODEL_NAME)
+    if c is None:
+        raise KeyError(f"no Sim4Life project convention for model {C.MODEL_NAME!r} "
+                       f"(known: {sorted(CONV)})")
+    return c
+
+
+def _ename(name):
+    return conv()["fmt"].format(name)
+
+
 def _grp(xm):
+    g = conv()["group"]
     m = xm.GetActiveModel()
     for e in m.RootGroup.Entities:
-        if e.Name == "Cloned Templates":
+        if e.Name == g:
             return e
-    raise KeyError("no 'Cloned Templates' group")
+    raise KeyError(f"no {g!r} group in this project")
 
 
 def _elec(xm, name):
-    for e in _grp(xm).Entities:
-        if e.Name == f"{name}_ElectrodeTemplate":
-            return e
-    raise KeyError(f"{name}_ElectrodeTemplate not found")
+    want = _ename(name)
+    #  The rat groups its electrodes one level down, so search the whole model rather than
+    #  only the group's direct children.
+    m = xm.GetActiveModel()
+    hit = m.FindEntities(lambda e: str(e.Name) == want)
+    if hit:
+        return hit[0]
+    raise KeyError(f"{want} not found")
+
+
+def base_smash():
+    """The project a montage is copied from, for the head currently selected.
+
+    ⚠ The rat's is the leadfield project itself — there is no separate montage base yet, so
+    `set_pair` has to undo its port mode. Overridable per head with TIP_REBUILD_SMASH /
+    TIP_RAT_SMASH so a re-solved model can be swapped in without editing code.
+    """
+    proj = os.environ.get("TIP_S4L_PROJECTS") or \
+        os.path.join(os.path.dirname(REPO), "s4l_projects")
+    if C.MODEL_NAME == "rat":
+        return os.environ.get("TIP_RAT_SMASH") or os.path.join(proj, "rat_lf.smash")
+    return R.SMASH
 
 
 def set_pair(sim, xm, plus, minus):
@@ -77,82 +131,172 @@ def set_pair(sim, xm, plus, minus):
         me = c.ModelEntity
         return None if me is None else str(me.Name)
 
-    for role, who in (("src", plus), ("ref", minus)):
+    cv = conv()
+
+    def _bset(role):
         bs = [c for c in sim.AllSettings
               if type(c).__name__ == "BoundarySettings" and c.Name == role]
         if not bs:
-            raise RuntimeError(f"no boundary setting named '{role}'")
-        bs = bs[0]
-        tgt = f"{who}_ElectrodeTemplate"
-        old = [c for c in (bs.raw.AssignedComponent(i)
-                           for i in range(bs.raw.SizeAssignedComponents()))
-               if _nm(c) != tgt]
+            raise RuntimeError(f"no boundary setting named {role!r}")
+        return bs[0]
+
+    def _assigned(bs):
+        return [bs.raw.AssignedComponent(i)
+                for i in range(bs.raw.SizeAssignedComponents())]
+
+    #  ★Break any cross-role collision **first**. A simulation is cloned from channel 1 and
+    #  then reassigned, so it arrives holding channel 1's electrodes. If the electrode now
+    #  wanted as the anode is the one it inherited as the cathode, assigning it to the anode
+    #  while it still sits on the cathode leaves it in both, and the later removal does not
+    #  take — `Passive` ended up holding two electrodes and the export aborted.
+    #  Only time multiplexing hits this: reusing electrodes across slots is the point of that
+    #  mode, so the same name turns up in a different role in a later channel.
+    for role, who in ((cv["src"], plus), (cv["ref"], minus)):
+        other = _bset(cv["ref"] if role == cv["src"] else cv["src"])
+        for c in _assigned(other):
+            if _nm(c) == _ename(who):
+                XSimulator.RemoveSettingsFromComponent(other.raw, c)
+
+    for role, who in ((cv["src"], plus), (cv["ref"], minus)):
+        bs = _bset(role)
+        if role == cv["src"]:
+            #  A leadfield project drives its electrodes as **ports**; a montage does not.
+            #  Leaving TreatAsPort on would solve 37 separate port cases again instead of the
+            #  one two-terminal problem asked for.
+            if cv["port"]:
+                bs.TreatAsPort = False
+            bs.DirichletValue = 1.0
+        tgt = _ename(who)
+        old = [c for c in _assigned(bs) if _nm(c) != tgt]
         if not sim.raw.AcquireComponent(_elec(xm, who)).AssignSettings(bs.raw):
             raise RuntimeError(f"failed to assign {who} to {role}")
         for o in old:
             XSimulator.RemoveSettingsFromComponent(bs.raw, o)
-        got = [_nm(bs.raw.AssignedComponent(i))
-               for i in range(bs.raw.SizeAssignedComponents())]
+        got = [_nm(c) for c in _assigned(bs)]
         if got != [tgt]:
-            raise RuntimeError(f"{role} ended up as {got}")
+            raise RuntimeError(
+                f"{role} ended up as {got}, expected [{tgt!r}] — an electrode is probably "
+                f"still held by the other role (see the cross-role purge above)")
     return True
 
 
-def export(out_smash, ch1, ch2, ratio=1.0, itotal=2.0, verbose=True):
+def export(out_smash, pairs, currents=None, ratio=1.0, itotal=2.0, combine=None,
+           compose="sum", duties=None, verbose=True):
     """Create a new project containing the montage. **Does not solve.**
 
-    ch1 · ch2 : (anode, cathode) electrode-name pairs
-    returns   : {"smash": path, "meta": path, "sims": ["ch1", "ch2"]}
+    pairs    : list of (anode, cathode) electrode-name pairs — one Sim4Life simulation each,
+               named ch1, ch2, ... Two pairs = classic TI; four = dual TI (2+2).
+    currents : mA per pair, same order. Omit for the two-pair case to derive them from
+               `ratio` and `itotal`, which is what the classic path has always done.
+    combine  : how the channels form envelopes, e.g. [["ch1","ch2"]] for classic or
+               [["ch1","ch2"],["ch3","ch4"]] for dual TI. Defaults to a single group of the
+               first two channels.
+    compose  : "sum" (default) — the groups run at once and their envelopes add, which is
+               classic and dual TI (`optimize_dual_ti` scores `ct = etA + etB`);
+               "timeavg" — time multiplexing: one slot at a time, so the analysis takes the
+               duty-weighted average per direction and maximises afterwards.
+    duties   : per-group duty cycle, required for "timeavg".
+    returns  : {"smash": path, "meta": path, "sims": ["ch1", ...]}
+
+    ★A channel is **one electrode pair**, because that is what a two-terminal Dirichlet solve
+    can express (one electrode at 1 V, one at 0 V, the rest floating). Dual TI fits because
+    its four channels are still four pairs. Distributed TI does **not** — there a channel is
+    a current distribution over many electrodes, which this cannot represent at all.
     """
     import s4l_v1 as s4l
     import s4l_v1.document as doc
     import XCoreModeling as xm
-    from tip.optimize.classic import channel_currents
 
-    i1, i2 = channel_currents(float(ratio), budget=float(itotal))
+    pairs = [tuple(p) for p in pairs]
+    if not pairs or any(len(p) != 2 for p in pairs):
+        raise ValueError("every channel must be exactly two electrodes: %r" % (pairs,))
+    if currents is None:
+        if len(pairs) != 2:
+            raise ValueError("currents= is required for anything but a two-pair montage")
+        from tip.optimize.classic import channel_currents
+        currents = list(channel_currents(float(ratio), budget=float(itotal)))
+    currents = [float(c) for c in currents]
+    if len(currents) != len(pairs):
+        raise ValueError("got %d pairs but %d currents" % (len(pairs), len(currents)))
+    names = ["ch%d" % (i + 1) for i in range(len(pairs))]
+    combine = [list(g) for g in (combine or [names[:2]])]
+    if compose not in ("sum", "timeavg"):
+        raise ValueError("compose must be 'sum' or 'timeavg', got %r" % compose)
+    if compose == "timeavg":
+        if not duties or len(duties) != len(combine):
+            raise ValueError("timeavg needs one duty per group (%d groups, %r)"
+                             % (len(combine), duties))
+        #  A duty is a fraction of the period; they have to account for all of it or the
+        #  reported envelope silently belongs to a different schedule than the one solved.
+        if abs(sum(duties) - 1.0) > 1e-6:
+            raise ValueError("duties must sum to 1, got %r (sum %.6f)"
+                             % (duties, sum(duties)))
+    duties = [float(w) for w in duties] if duties else None
     os.makedirs(os.path.dirname(out_smash), exist_ok=True)
 
     #  ★Copy the rebuilt project **at the file level first**. Using doc.SaveAs alone leaves
     #    `_Results` behind, which forces the voxels to be rebuilt (87 s).
     if os.path.exists(out_smash):
         os.remove(out_smash)
-    shutil.copy2(R.SMASH, out_smash)
-    src_res = R.SMASH + "_Results"
+    base_path = base_smash()
+    shutil.copy2(base_path, out_smash)
+    src_res = base_path + "_Results"
     dst_res = out_smash + "_Results"
     if os.path.isdir(src_res):
+        #  ⚠ `rmtree(..., ignore_errors=True)` swallows a locked file and leaves the directory
+        #  behind, and the plain `copytree` that followed then died with
+        #  `FileExistsError: montage_gui.smash_Results`. Sim4Life or a viewer holding one h5
+        #  is enough to trigger it. Copy **into** whatever survives instead of demanding a
+        #  clean slate — the files are overwritten either way.
         shutil.rmtree(dst_res, ignore_errors=True)
-        shutil.copytree(src_res, dst_res)
+        shutil.copytree(src_res, dst_res, dirs_exist_ok=True)
 
     doc.Open(out_smash)
     sims = list(doc.AllSimulations)
-    base = sims[0]
+    #  ⚠ Not `base` — that name holds the base project **path** above, and reusing it here
+    #  silently turned `meta["base_project"]` into a live simulation object, which killed the
+    #  whole export on `json.dump` ("ElectroQsOhmicSimulation is not JSON serializable")
+    #  after the model had already been copied and opened.
+    one = sims[0]
 
-    #  Channel 1 reuses the original simulation; channel 2 is a clone.
-    base.Name = "ch1"
-    set_pair(base, xm, ch1[0], ch1[1])
-    two = base.Clone()
-    two.Name = "ch2"
-    if two not in list(doc.AllSimulations):
-        doc.AllSimulations.Add(two)
-    set_pair(two, xm, ch2[0], ch2[1])
+    #  Channel 1 reuses the original simulation; the rest are clones of it.
+    one.Name = names[0]
+    set_pair(one, xm, pairs[0][0], pairs[0][1])
+    for nm, pr in zip(names[1:], pairs[1:]):
+        sim = one.Clone()
+        sim.Name = nm
+        if sim not in list(doc.AllSimulations):
+            doc.AllSimulations.Add(sim)
+        set_pair(sim, xm, pr[0], pr[1])
 
     doc.Save()
 
+    mont = {nm: list(pr) for nm, pr in zip(names, pairs)}
+    mont["pairs"] = [list(pr) for pr in pairs]
+    mont["combine"] = combine
+    mont["compose"] = compose
+    if duties is not None:
+        mont["duties"] = duties
+    mont["ratio"] = float(ratio)
     meta = {
-        "montage": {"ch1": list(ch1), "ch2": list(ch2), "ratio": float(ratio)},
-        "currents_mA": {"ch1": float(i1), "ch2": float(i2), "itotal": float(itotal)},
+        "montage": mont,
+        "currents_mA": dict({nm: c for nm, c in zip(names, currents)},
+                            itotal=float(sum(currents))),
         "convention": ("Solved at 1 V Dirichlet. Real field = E_1V * (i_k / I_inj), with "
                        "I_inj = integral of sigma|E|^2 dV. Same convention as the leadfield."),
-        "grid": "185 x 254 x 228 = 10.714 MCells (inherited from the rebuilt project)",
-        "base_project": R.SMASH,
+        "grid": "inherited from the base project",
+        "base_project": base_path,
+        "model": C.MODEL_NAME,
     }
     mpath = out_smash.replace(".smash", "_montage.json")
     json.dump(meta, open(mpath, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
     if verbose:
         print(f"[s4l_montage] project {out_smash}")
-        print(f"  ch1 {ch1[0]}(+) → {ch1[1]}(−)  {i1:.4f} mA")
-        print(f"  ch2 {ch2[0]}(+) → {ch2[1]}(−)  {i2:.4f} mA")
+        for nm, pr, c in zip(names, pairs, currents):
+            print(f"  {nm} {pr[0]}(+) → {pr[1]}(−)  {c:.4f} mA")
+        print(f"  envelope groups: {combine} · compose={compose}"
+              + (f" · duties={duties}" if duties else ""))
         print(f"  simulations: {[s.Name for s in doc.AllSimulations]}")
         print(f"  metadata {mpath}")
     return {"smash": out_smash, "meta": mpath,
@@ -221,7 +365,11 @@ def solve_project(smash, out_dir, verbose=True):
         #    The metrics (M1/M2/M3) need only this, and the full grid (128 MB) is deleted after
         #    the analysis. This file is what makes re-deriving metrics for a different target
         #    possible **without re-solving**.
-        bm = np.load(IN("bmask1010.npy")).astype(np.int64)
+        #  ⚠ Per head — `C.BMASK_FILE`, never the literal "bmask1010.npy". The human file
+        #  exists whatever model is loaded, so hard-coding it does not fail on the rat: it
+        #  indexes the rat's grid with human voxel indices and writes a plausible-looking
+        #  `_Ebrain.npy` full of the wrong voxels. Silent, and every later metric inherits it.
+        bm = np.load(IN(C.BMASK_FILE)).astype(np.int64)
         np.save(os.path.join(out_dir, f"{sim.Name}_Ebrain.npy"),
                 E[bm[:, 0], bm[:, 1], bm[:, 2]].astype(np.float32))
         if not os.path.exists(os.path.join(out_dir, "sigma.npy")):
@@ -255,10 +403,22 @@ def main(argv):
         print(__doc__); return 1
     if argv[0] == "export":
         out = argv[1]
-        a, b, c, d = argv[2:6]
         ratio = float(argv[argv.index("--ratio") + 1]) if "--ratio" in argv else 1.0
         itot = float(argv[argv.index("--itotal") + 1]) if "--itotal" in argv else 2.0
-        export(out, (a, b), (c, d), ratio, itot)
+        #  Two ways in. `--pairs` is the general one (any number of channels, explicit
+        #  currents); the four positional electrodes are the classic two-pair form and are
+        #  kept working unchanged.
+        if "--pairs" in argv:
+            pairs = json.loads(argv[argv.index("--pairs") + 1])
+            cur = json.loads(argv[argv.index("--currents") + 1])                 if "--currents" in argv else None
+            comb = json.loads(argv[argv.index("--combine") + 1])                 if "--combine" in argv else None
+            comp = argv[argv.index("--compose") + 1] if "--compose" in argv else "sum"
+            dut = json.loads(argv[argv.index("--duties") + 1]) if "--duties" in argv else None
+            export(out, pairs, currents=cur, ratio=ratio, itotal=itot, combine=comb,
+                   compose=comp, duties=dut)
+        else:
+            a, b, c, d = argv[2:6]
+            export(out, [(a, b), (c, d)], ratio=ratio, itotal=itot)
         if "--solve" in argv:
             odir = argv[argv.index("--solve") + 1]
             solve_project(out, odir)

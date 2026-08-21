@@ -79,21 +79,58 @@ def check_anatomy(lf):
 
 
 def check_falloff(lf):
-    """Median brain |E| should decrease with distance from the driven electrode."""
+    """Brain |E| should fall off with the electrode's distance from the brain.
+
+    ★Use the **minimum** distance, not the median over all brain voxels. The rat brain is
+    long (the cerebellum and medulla stretch 20 mm behind the forebrain), so the median
+    distance is dominated by the far end and says almost nothing about the near field — with
+    the median this check reports a *positive* correlation and looks alarming for no reason.
+    """
     print("--- 3. distance fall-off ---")
     coords = lf.coords()
+    inj = {}
+    p = os.path.join(C.LEADFIELD_ROOT, C.MODEL.leadfield_dir, "inj_current.json")
+    if os.path.exists(p):
+        inj = json.load(open(p))
     rows = []
     for n in sorted(lf.names):
-        p = np.asarray(lf.pos[n], float)
+        q = np.asarray(lf.pos[n], float)
         M = np.load(lf.reg[n][0])
-        d = float(np.median(np.linalg.norm(coords - p, axis=1)))
-        rows.append((n, d, float(np.median(np.linalg.norm(M, axis=1)))))
-    d = np.array([r[1] for r in rows])
-    m = np.array([r[2] for r in rows])
-    r = float(np.corrcoef(d, m)[0, 1])
-    print("  median |E| per mA: %.3f .. %.3f V/m   (median %.3f)" % (m.min(), m.max(), np.median(m)))
-    print("  corr(median distance to brain, median |E|) = %+.3f  %s"
-          % (r, "ok, closer electrodes give more field" if r < -0.3 else "★look at this"))
+        d = np.linalg.norm(coords - q, axis=1)
+        rows.append((n, float(d.min()), float(np.median(np.linalg.norm(M, axis=1)))))
+    dm = np.array([r[1] for r in rows])
+    mg = np.array([r[2] for r in rows])
+    print("  distance to nearest brain voxel: %.2f .. %.2f mm" % (dm.min(), dm.max()))
+    print("  median |E| per mA: %.3f .. %.3f V/m   (median %.3f)"
+          % (mg.min(), mg.max(), np.median(mg)))
+    #  ★Comparing electrodes to each other does not test anything here: all 37 sit within
+    #  2.5-4.8 mm of the brain, and across that narrow range the electrode's own conductance
+    #  (temporalis muscle, below) swamps the geometry — the across-electrode correlation
+    #  comes out at -0.006 and means nothing. The test with real content is *within* each
+    #  electrode: the field it produces must decay with distance from it, everywhere.
+    worst = None
+    for n in sorted(lf.names):
+        q = np.asarray(lf.pos[n], float)
+        d = np.linalg.norm(coords - q, axis=1)
+        e = np.linalg.norm(np.load(lf.reg[n][0]), axis=1)
+        rr = float(np.corrcoef(np.log(d), np.log(np.maximum(e, 1e-12)))[0, 1])
+        if worst is None or rr > worst[1]:
+            worst = (n, rr)
+    print("  within-electrode corr(log distance, log |E|): worst of 37 is %s at %+.3f  %s"
+          % (worst[0], worst[1],
+             "ok, every electrode's field decays with distance" if worst[1] < -0.3
+             else "LOOK AT THIS"))
+    r = worst[1]
+    if inj:
+        v = np.array([inj[n] * 1e3 for n, _, _ in rows])
+        hi = [n for (n, _, _), x in zip(rows, v) if x > 0.4]
+        print("  injected current at 1 V: %.3f .. %.3f mA  (median %.3f)"
+              % (v.min(), v.max(), np.median(v)))
+        #  C6 / CP6 / P6 sit over the right temporalis muscle (sigma 0.461 against fat's
+        #  0.0776) and draw 1.5-2.7x the current of the rest. corr(I, muscle fraction within
+        #  2 mm) = +0.80 — physics, not a defect. Each field is normalised to 1 mA anyway.
+        print("  high-conductance electrodes (>0.4 mA/V): %s  — temporalis muscle, expected"
+              % (sorted(hi) if hi else "none"))
     return r < 0
 
 
@@ -115,8 +152,10 @@ def check_montage(lf, pairs):
         t = ti.tmax(E1, E2)
         m = metrics.all_metrics(t[tgt.target_idx], t[tgt.off_idx])
         out.append((a, b, c, d, m))
+        #  metrics.M3 already returns a percentage — do not scale it again.
         print("  %-22s %8.4f %8.3f %8.2f"
-              % ("%s-%s|%s-%s" % (a, b, c, d), m["M1"], m["M2"], 100 * m["M3"]))
+              % ("%s-%s|%s-%s" % (a, b, c, d), m["M1"], m["M2"], m["M3"]))
+    print("  (these five are arbitrary smoke-test montages, not optimised)")
     return out
 
 

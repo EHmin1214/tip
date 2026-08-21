@@ -4,11 +4,11 @@
 Reads the 37 `*_Output.h5` produced by `iSolve` on `rat_lf.smash` and writes
 
     inputs/leadfield/leadfield_rat/{electrode}.npy   (N,3) float32, V/m per 1 mA
-    inputs/bmask_rat.npy    (N,3) int32   grid indices of the brain voxels
-    inputs/gaxes_rat.npz    cx, cy, cz    cell-centre coordinates, mm
-    inputs/blabel_rat.npy   (N,)  uint8   tissue label per brain voxel
-    inputs/pos_rat.json     {electrode: [x,y,z]}  mm
-    inputs/labels_rat.json  {tissue name: label}
+    inputs/geometry/bmask_rat.npy    (N,3) int32   grid indices of the brain voxels
+    inputs/geometry/gaxes_rat.npz    cx, cy, cz    cell-centre coordinates, mm
+    inputs/geometry/blabel_rat.npy   (N,)  uint8   tissue label per brain voxel
+    inputs/geometry/pos_rat.json     {electrode: [x,y,z]}  mm
+    inputs/geometry/labels_rat.json  {tissue name: label}
 
 ★ Normalisation. Every port output is the *raw 1 V basis*: the driven electrode sits at
   1 V, all other electrodes at 0 V, the six outer faces are flux 0. No port current is
@@ -35,6 +35,10 @@ import numpy as np
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 INPUTS = os.path.join(REPO, "inputs")
+#  Geometry lives beside the human model's, in inputs/geometry. `config.inputs()` resolves a
+#  bare filename by searching the subfolders, so readers do not care where it sits — but
+#  writers do, and splitting the two heads across two directories is how they drift apart.
+GEOM = os.path.join(INPUTS, "geometry")
 DESK = os.path.dirname(REPO)
 
 SMASH = os.environ.get("TIP_RAT_SMASH") or os.path.join(DESK, "s4l_projects", "rat_lf.smash")
@@ -186,11 +190,12 @@ def main():
         sys.exit("★ voxel volumes disagree with the meshes by more than 10% — stop and look")
 
     os.makedirs(a.out, exist_ok=True)
-    np.save(os.path.join(INPUTS, "bmask_rat.npy"), geo["bmask"])
-    np.savez(os.path.join(INPUTS, "gaxes_rat.npz"),
+    os.makedirs(GEOM, exist_ok=True)
+    np.save(os.path.join(GEOM, "bmask_rat.npy"), geo["bmask"])
+    np.savez(os.path.join(GEOM, "gaxes_rat.npz"),
              cx=geo["centres"][0], cy=geo["centres"][1], cz=geo["centres"][2])
-    np.save(os.path.join(INPUTS, "blabel_rat.npy"), geo["blabel"])
-    json.dump(RAT_LABELS, open(os.path.join(INPUTS, "labels_rat.json"), "w"), indent=1)
+    np.save(os.path.join(GEOM, "blabel_rat.npy"), geo["blabel"])
+    json.dump(RAT_LABELS, open(os.path.join(GEOM, "labels_rat.json"), "w"), indent=1)
     print("geometry written")
     if a.geometry_only:
         return
@@ -222,7 +227,7 @@ def main():
     ep = os.path.join(DESK, "rat_electrodes.json")
     if os.path.exists(ep):
         pos = json.load(open(ep))["electrodes"]
-        json.dump(pos, open(os.path.join(INPUTS, "pos_rat.json"), "w"), indent=1)
+        json.dump(pos, open(os.path.join(GEOM, "pos_rat.json"), "w"), indent=1)
         json.dump(pos, open(os.path.join(a.out, "positions.json"), "w"), indent=1)
         print("positions written (%d)" % len(pos))
 
